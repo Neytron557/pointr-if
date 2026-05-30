@@ -18,7 +18,7 @@ import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from .datasets import ManifestTripletDataset
+from .datasets import CandidateBankDataset, ManifestTripletDataset
 from .io import save_point_cloud
 from .models import build_model_from_config
 from .point_ops import chamfer_components, farthest_point_sample, fscore, to_device
@@ -78,6 +78,17 @@ def _write_csv(path: Path, rows: List[Dict[str, Any]], fieldnames: List[str]) ->
 
 def _safe_name(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in value)[:180]
+
+
+def _forward_model(model: torch.nn.Module, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+    if "candidates" in batch:
+        return model(
+            partial=batch["partial"],
+            coarse=batch["coarse"],
+            candidates=batch["candidates"],
+            source_ids=batch.get("source_ids"),
+        )
+    return model(batch["partial"], batch["coarse"])
 
 
 def _scatter(ax, points: torch.Tensor, title: str) -> None:
@@ -173,6 +184,12 @@ def evaluate_manifest(
     max_visualizations: int = 12,
     max_samples: int | None = None,
     eval_seed: int | None = None,
+    resample_mode: str | None = None,
+    n_partial: int | None = None,
+    n_coarse: int | None = None,
+    n_gt: int | None = None,
+    n_output: int | None = None,
+    candidate_manifest: str | Path | None = None,
 ) -> Dict[str, Any]:
     ckpt = _load_checkpoint(checkpoint)
     cfg = ckpt["cfg"]
@@ -182,13 +199,29 @@ def evaluate_manifest(
     dev = _resolve_device(device, cfg)
     dcfg = cfg.get("dataset", {})
     resolved_eval_seed = int(eval_seed) if eval_seed is not None else int(cfg.get("seed", 0)) + 200000
-    dset = ManifestTripletDataset(
-        manifest,
-        n_partial=int(dcfg.get("n_partial", 2048)),
-        n_coarse=int(dcfg.get("n_coarse", 2048)),
-        n_gt=int(dcfg.get("n_gt", 2048)),
+    resolved_resample_mode = str(resample_mode or dcfg.get("resample_mode", "random")).lower()
+    resolved_n_partial = n_partial if n_partial is not None else int(dcfg.get("n_partial", 2048))
+    resolved_n_coarse = n_coarse if n_coarse is not None else int(dcfg.get("n_coarse", 2048))
+    resolved_n_gt = n_gt if n_gt is not None else int(dcfg.get("n_gt", 2048))
+    if resolved_resample_mode == "none":
+        resolved_n_partial = resolved_n_coarse = resolved_n_gt = None
+    dset_cls = CandidateBankDataset if candidate_manifest is not None else ManifestTripletDataset
+    dset = dset_cls(
+        candidate_manifest or manifest,
+        n_partial=resolved_n_partial,
+        n_coarse=resolved_n_coarse,
+        n_gt=resolved_n_gt,
         normalize=bool(dcfg.get("normalize", True)),
         seed=resolved_eval_seed,
+        resample_mode=resolved_resample_mode,
+        **(
+            {
+                "candidate_points": dcfg.get("candidate_points"),
+                "max_sources": dcfg.get("max_sources"),
+            }
+            if candidate_manifest is not None
+            else {}
+        ),
     )
     loader = DataLoader(
         dset,
@@ -214,9 +247,15 @@ def evaluate_manifest(
         categories = _as_list(batch.get("category"), n_batch)
         splits = _as_list(batch.get("split"), n_batch)
         batch = to_device(batch, dev)
-        out = model(batch["partial"], batch["coarse"])
+        out = _forward_model(model, batch)
         refined = out["refined"]
-        anchor = farthest_point_sample(torch.cat([batch["partial"], batch["coarse"]], dim=1), batch["coarse"].shape[1])
+        resolved_n_output = int(n_output) if n_output is not None else int(refined.shape[1])
+        if refined.shape[1] != resolved_n_output:
+            refined = farthest_point_sample(refined, resolved_n_output)
+        coarse_eval = batch["coarse"]
+        if coarse_eval.shape[1] != resolved_n_output:
+            coarse_eval = farthest_point_sample(coarse_eval, resolved_n_output)
+        anchor = farthest_point_sample(torch.cat([batch["partial"], batch["coarse"]], dim=1), resolved_n_output)
 
         for b in range(n_batch):
             if max_samples is not None and seen >= max_samples:
@@ -226,7 +265,7 @@ def evaluate_manifest(
             split = splits[b]
             clouds = {
                 "partial": batch["partial"][b : b + 1],
-                "coarse": batch["coarse"][b : b + 1],
+                "coarse": coarse_eval[b : b + 1],
                 "anchor": anchor[b : b + 1],
                 "refined": refined[b : b + 1],
             }
@@ -242,7 +281,7 @@ def evaluate_manifest(
                     out_dir / "visualizations" / f"{visual_count:03d}_{_safe_name(sample_id)}.png",
                     sample_id,
                     batch["partial"][b],
-                    batch["coarse"][b],
+                    coarse_eval[b],
                     anchor[b],
                     refined[b],
                     batch["gt"][b],
@@ -284,6 +323,12 @@ def evaluate_manifest(
                 "checkpoint": str(checkpoint),
                 "device": str(dev),
                 "eval_seed": resolved_eval_seed,
+                "resample_mode": resolved_resample_mode,
+                "n_partial": resolved_n_partial,
+                "n_coarse": resolved_n_coarse,
+                "n_gt": resolved_n_gt,
+                "n_output": n_output,
+                "candidate_manifest": str(candidate_manifest) if candidate_manifest is not None else None,
             },
             indent=2,
         )
@@ -311,6 +356,12 @@ def main() -> None:
         default=None,
         help="Seed for deterministic eval point resampling. Defaults to checkpoint seed + 200000.",
     )
+    parser.add_argument("--resample-mode", choices=["random", "fps", "none"], default=None)
+    parser.add_argument("--n-partial", type=int, default=None)
+    parser.add_argument("--n-coarse", type=int, default=None)
+    parser.add_argument("--n-gt", type=int, default=None)
+    parser.add_argument("--n-output", type=int, default=None)
+    parser.add_argument("--candidate-manifest", default=None)
     args = parser.parse_args()
 
     summary = evaluate_manifest(
@@ -325,6 +376,12 @@ def main() -> None:
         max_visualizations=args.max_visualizations,
         max_samples=args.max_samples,
         eval_seed=args.eval_seed,
+        resample_mode=args.resample_mode,
+        n_partial=args.n_partial,
+        n_coarse=args.n_coarse,
+        n_gt=args.n_gt,
+        n_output=args.n_output,
+        candidate_manifest=args.candidate_manifest,
     )
     print(json.dumps(summary["overall"], indent=2))
 

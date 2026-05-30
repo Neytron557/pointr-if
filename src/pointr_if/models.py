@@ -372,6 +372,127 @@ class GatedMultiViewSelfStructureRefiner(nn.Module):
         return out
 
 
+class SeedPointrIFRefiner(nn.Module):
+    """Dense candidate fusion refiner for SEED-PoinTr-IF.
+
+    The model consumes a bank of candidate completions from AdaPoinTr/TTA/symmetry
+    and learned refiners, predicts per-point confidence and residuals, expands each
+    candidate point into children, then returns the top-confidence dense cloud.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int = 128,
+        global_dim: int = 192,
+        source_embed_dim: int = 16,
+        fourier_bands: int = 4,
+        k: int = 8,
+        max_sources: int = 32,
+        candidate_points: int = 1024,
+        output_points: int = 4096,
+        expansion_factor: int = 4,
+        delta_scale: float = 0.04,
+        child_radius: float = 0.04,
+        coarse_passthrough_score: float = 0.0,
+    ):
+        super().__init__()
+        self.k = int(k)
+        self.max_sources = int(max_sources)
+        self.candidate_points = int(candidate_points)
+        self.output_points = int(output_points)
+        self.expansion_factor = int(expansion_factor)
+        self.delta_scale = float(delta_scale)
+        self.child_radius = float(child_radius)
+        self.coarse_passthrough_score = float(coarse_passthrough_score)
+        self.encoder = PointSetEncoder(hidden_dim=hidden_dim, point_feature_dim=hidden_dim, global_dim=global_dim)
+        self.fourier = FourierFeatures(num_bands=fourier_bands, include_xyz=True)
+        self.source_embedding = nn.Embedding(self.max_sources, int(source_embed_dim))
+
+        geom_dim = 4
+        in_dim = self.fourier.out_dim + global_dim + int(source_embed_dim) + geom_dim
+        self.trunk = mlp([in_dim, hidden_dim, hidden_dim, hidden_dim])
+        self.confidence_head = nn.Linear(hidden_dim, 1)
+        self.residual_head = nn.Linear(hidden_dim, 3)
+        self.source_head = nn.Linear(hidden_dim, self.max_sources)
+        self.child_offset_head = nn.Linear(hidden_dim, self.expansion_factor * 3)
+        self.child_confidence_head = nn.Linear(hidden_dim, self.expansion_factor)
+        nn.init.zeros_(self.residual_head.weight)
+        nn.init.zeros_(self.residual_head.bias)
+        nn.init.zeros_(self.child_offset_head.weight)
+        nn.init.zeros_(self.child_offset_head.bias)
+        nn.init.zeros_(self.confidence_head.weight)
+        nn.init.constant_(self.confidence_head.bias, -1.0)
+        nn.init.zeros_(self.child_confidence_head.weight)
+        nn.init.constant_(self.child_confidence_head.bias, -1.0)
+
+    def _geometry_features(self, points: torch.Tensor, partial: torch.Tensor, coarse: torch.Tensor) -> torch.Tensor:
+        nearest_partial = torch.cdist(points, partial, p=2).min(dim=2).values
+        nearest_coarse = torch.cdist(points, coarse, p=2).min(dim=2).values
+        radius = torch.linalg.norm(points, dim=-1)
+        missing_score = (nearest_partial - nearest_coarse).clamp_min(0.0)
+        return torch.stack([nearest_partial, nearest_coarse, radius, missing_score], dim=-1)
+
+    def _source_ids(self, candidates: torch.Tensor, source_ids: Optional[torch.Tensor]) -> torch.Tensor:
+        b, sources, _points, _xyz = candidates.shape
+        if source_ids is None:
+            source_ids = torch.arange(sources, device=candidates.device).unsqueeze(0).expand(b, -1)
+        source_ids = source_ids.to(device=candidates.device, dtype=torch.long).clamp(0, self.max_sources - 1)
+        return source_ids.unsqueeze(-1).expand(-1, -1, candidates.shape[2]).reshape(b, sources * candidates.shape[2])
+
+    def forward(
+        self,
+        partial: torch.Tensor,
+        coarse: torch.Tensor,
+        candidates: torch.Tensor,
+        source_ids: Optional[torch.Tensor] = None,
+        query: Optional[torch.Tensor] = None,
+    ) -> Dict[str, torch.Tensor]:
+        if candidates.ndim != 4 or candidates.shape[-1] != 3:
+            raise ValueError("candidates must be [B,S,N,3]")
+        b, sources, points_per_source, _ = candidates.shape
+        flat = candidates.reshape(b, sources * points_per_source, 3)
+        flat_source_ids = self._source_ids(candidates, source_ids)
+        encoded = self.encoder(partial, coarse)
+        global_feat = encoded.global_feature.unsqueeze(1).expand(-1, flat.shape[1], -1)
+        source_feat = self.source_embedding(flat_source_ids)
+        geom = self._geometry_features(flat, partial, coarse)
+        h = self.trunk(torch.cat([self.fourier(flat), global_feat, source_feat, geom], dim=-1))
+
+        confidence_logits = self.confidence_head(h).squeeze(-1)
+        residual_delta = torch.tanh(self.residual_head(h)) * self.delta_scale
+        fused = flat + residual_delta
+        source_logits = self.source_head(h)
+
+        child_offsets = torch.tanh(self.child_offset_head(h)).reshape(b, flat.shape[1], self.expansion_factor, 3)
+        child_offsets = child_offsets * self.child_radius
+        child_confidence = self.child_confidence_head(h)
+        children = fused.unsqueeze(2) + child_offsets
+        child_scores = confidence_logits.unsqueeze(-1) + child_confidence
+        dense = children.reshape(b, flat.shape[1] * self.expansion_factor, 3)
+        dense_scores = child_scores.reshape(b, flat.shape[1] * self.expansion_factor)
+        if coarse.shape[1] > 0:
+            dense = torch.cat([coarse, dense], dim=1)
+            coarse_scores = dense_scores.new_full((b, coarse.shape[1]), self.coarse_passthrough_score)
+            dense_scores = torch.cat([coarse_scores, dense_scores], dim=1)
+
+        if dense.shape[1] < self.output_points:
+            repeats = (self.output_points + dense.shape[1] - 1) // dense.shape[1]
+            dense = dense.repeat(1, repeats, 1)
+            dense_scores = dense_scores.repeat(1, repeats)
+        topk = torch.topk(dense_scores, k=self.output_points, dim=1).indices
+        refined = dense.gather(1, topk.unsqueeze(-1).expand(-1, -1, 3))
+        return {
+            "refined": refined,
+            "point_confidence": confidence_logits,
+            "source_logits": source_logits,
+            "residual_delta": residual_delta,
+            "child_confidence": child_confidence,
+            "candidate_points": fused,
+            "dense_candidates": dense,
+            "selected_indices": topk,
+        }
+
+
 def build_model_from_config(cfg: Dict) -> nn.Module:
     model_cfg = cfg.get("model", cfg)
     model_type = str(model_cfg.get("type", "implicit")).lower()
@@ -388,6 +509,21 @@ def build_model_from_config(cfg: Dict) -> nn.Module:
             use_multiview=bool(model_cfg.get("use_multiview", True)),
             multiview_resolution=int(model_cfg.get("multiview_resolution", 32)),
             multiview_feature_dim=int(model_cfg.get("multiview_feature_dim", 32)),
+        )
+    if model_type in {"seed", "seed_if", "seed_pointr_if"}:
+        return SeedPointrIFRefiner(
+            hidden_dim=int(model_cfg.get("hidden_dim", 128)),
+            global_dim=int(model_cfg.get("global_dim", 192)),
+            source_embed_dim=int(model_cfg.get("source_embed_dim", 16)),
+            fourier_bands=int(model_cfg.get("fourier_bands", 4)),
+            k=int(model_cfg.get("k", 8)),
+            max_sources=int(model_cfg.get("max_sources", 32)),
+            candidate_points=int(model_cfg.get("candidate_points", 1024)),
+            output_points=int(model_cfg.get("output_points", 4096)),
+            expansion_factor=int(model_cfg.get("expansion_factor", 4)),
+            delta_scale=float(model_cfg.get("delta_scale", 0.04)),
+            child_radius=float(model_cfg.get("child_radius", 0.04)),
+            coarse_passthrough_score=float(model_cfg.get("coarse_passthrough_score", 0.0)),
         )
     return ImplicitSurfaceRefiner(
         hidden_dim=int(model_cfg.get("hidden_dim", 128)),

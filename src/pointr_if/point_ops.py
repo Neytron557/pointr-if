@@ -35,14 +35,57 @@ def normalize_points_torch(points: torch.Tensor, eps: float = 1e-8) -> torch.Ten
     return centered / scale.unsqueeze(-1)
 
 
-def resample_points_np(points: np.ndarray, n: int, rng: Optional[np.random.Generator] = None) -> np.ndarray:
-    """Randomly resample a point cloud to exactly n points."""
+def farthest_point_sample_np(points: np.ndarray, n: int) -> np.ndarray:
+    """Deterministically sample ``n`` points from a point cloud with FPS."""
+    points = np.asarray(points, dtype=np.float32)
+    if points.ndim != 2 or points.shape[1] < 3:
+        raise ValueError(f"Expected point cloud of shape [N, >=3], got {points.shape}")
+    points = points[:, :3]
+    n = int(n)
+    if n <= 0:
+        raise ValueError("n must be positive.")
+    total = points.shape[0]
+    if total == n:
+        return points.astype(np.float32)
+    if total < n:
+        repeats = math.ceil(n / total)
+        return np.tile(points, (repeats, 1))[:n].astype(np.float32)
+
+    centroids = np.zeros(n, dtype=np.int64)
+    distances = np.full(total, np.inf, dtype=np.float32)
+    farthest = 0
+    for i in range(n):
+        centroids[i] = farthest
+        centroid = points[farthest : farthest + 1]
+        dist = ((points - centroid) ** 2).sum(axis=1)
+        distances = np.minimum(distances, dist)
+        farthest = int(distances.argmax())
+    return points[centroids].astype(np.float32)
+
+
+def resample_points_np(
+    points: np.ndarray,
+    n: Optional[int],
+    rng: Optional[np.random.Generator] = None,
+    mode: str = "random",
+) -> np.ndarray:
+    """Resample a point cloud using random sampling, FPS, or no sampling."""
     if rng is None:
         rng = np.random.default_rng()
     points = np.asarray(points, dtype=np.float32)
     if points.ndim != 2 or points.shape[1] < 3:
         raise ValueError(f"Expected point cloud of shape [N, >=3], got {points.shape}")
     points = points[:, :3]
+    mode = str(mode).lower()
+    if mode == "none":
+        return points.astype(np.float32)
+    if n is None:
+        raise ValueError("n must be provided unless resample mode is 'none'.")
+    n = int(n)
+    if mode == "fps":
+        return farthest_point_sample_np(points, n)
+    if mode != "random":
+        raise ValueError(f"Unsupported resample mode: {mode}")
     if points.shape[0] == n:
         return points.astype(np.float32)
     replace = points.shape[0] < n
@@ -100,6 +143,17 @@ def chamfer_distance(pred: torch.Tensor, target: torch.Tensor, squared: bool = F
         mins_pred = mins_pred.square()
         mins_target = mins_target.square()
     return mins_pred.mean(dim=1).mean() + mins_target.mean(dim=1).mean()
+
+
+def chamfer_distance_per_sample(pred: torch.Tensor, target: torch.Tensor, squared: bool = False) -> torch.Tensor:
+    """Symmetric Chamfer distance for each sample in a batch."""
+    d = pairwise_dist(pred, target)
+    mins_pred = d.min(dim=2).values
+    mins_target = d.min(dim=1).values
+    if squared:
+        mins_pred = mins_pred.square()
+        mins_target = mins_target.square()
+    return mins_pred.mean(dim=1) + mins_target.mean(dim=1)
 
 
 @torch.no_grad()

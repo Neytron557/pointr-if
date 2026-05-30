@@ -1,0 +1,56 @@
+seed: 570
+model:
+  type: seed
+  hidden_dim: 64
+  global_dim: 96
+  source_embed_dim: 12
+  fourier_bands: 4
+  k: 8
+  max_sources: 32
+  candidate_points: 512
+  output_points: 4096
+  expansion_factor: 2
+  delta_scale: 0.04
+  child_radius: 0.04
+  coarse_passthrough_score: 0.0
+dataset:
+  type: candidate_manifest
+  manifest: outputs/seed_pointr_if/candidate_bank_seed/train_candidate_manifest.csv
+  val_manifest: outputs/seed_pointr_if/candidate_bank_seed/val_candidate_manifest.csv
+  n_partial: 1024
+  n_coarse: 4096
+  n_gt: 2048
+  candidate_points: 512
+  max_sources: 32
+  normalize: true
+  resample_mode: fps
+train:
+  epochs: 6
+  batch_size: 1
+  val_batch_size: 1
+  num_threads: 4
+  num_workers: 4
+  lr: 0.0002
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  val_every: 1
+  max_train_batches: 200
+  max_val_batches: 50
+  log_every: 25
+  device: cuda
+  amp: false
+loss:
+  lambda_cd: 1.0
+  lambda_candidate_conf: 0.05
+  confidence_threshold: 0.03
+  lambda_partial: 0.03
+  lambda_repulsion: 0.0
+  repulsion_k: 5
+  repulsion_radius: 0.02
+  lambda_delta_l2: 0.05
+  lambda_source_entropy: 0.001
+  lambda_fscore_proxy: 0.0
+  hard_weight_alpha: 2.0
+  squared_cd: false
+eval:
+  fscore_threshold: 0.02

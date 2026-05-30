@@ -18,6 +18,7 @@ from .models import build_model_from_config
 from .point_ops import (
     chamfer_components,
     chamfer_distance,
+    chamfer_distance_per_sample,
     fscore,
     nearest_delta,
     pairwise_dist,
@@ -70,6 +71,9 @@ def make_loaders(cfg: Dict) -> Tuple[DataLoader, DataLoader]:
 
 
 def compute_losses(model, batch: Dict, cfg: Dict) -> Tuple[torch.Tensor, Dict[str, float]]:
+    if "candidates" in batch:
+        return compute_seed_losses(model, batch, cfg)
+
     loss_cfg = cfg.get("loss", {})
     lambda_occ = float(loss_cfg.get("lambda_occ", 0.2))
     lambda_repulsion = float(loss_cfg.get("lambda_repulsion", 0.0))
@@ -154,6 +158,93 @@ def compute_losses(model, batch: Dict, cfg: Dict) -> Tuple[torch.Tensor, Dict[st
     return total, logs
 
 
+def _normalized_hard_weights(coarse_cd: torch.Tensor, alpha: float) -> torch.Tensor:
+    if alpha <= 0.0:
+        return torch.ones_like(coarse_cd)
+    span = coarse_cd.max() - coarse_cd.min()
+    if float(span.detach().cpu()) > 1e-8:
+        normalized = (coarse_cd - coarse_cd.min()) / span.clamp_min(1e-8)
+    else:
+        normalized = coarse_cd / coarse_cd.mean().clamp_min(1e-8)
+    return 1.0 + float(alpha) * normalized.detach()
+
+
+def compute_seed_losses(model, batch: Dict, cfg: Dict) -> Tuple[torch.Tensor, Dict[str, float]]:
+    loss_cfg = cfg.get("loss", {})
+    partial = batch["partial"]
+    coarse = batch["coarse"]
+    gt = batch["gt"]
+    out = model(
+        partial=partial,
+        coarse=coarse,
+        candidates=batch["candidates"],
+        source_ids=batch.get("source_ids"),
+    )
+    refined = out["refined"]
+    squared = bool(loss_cfg.get("squared_cd", False))
+    refined_cd = chamfer_distance_per_sample(refined, gt, squared=squared)
+    with torch.no_grad():
+        coarse_eval = coarse
+        if coarse_eval.shape[1] != refined.shape[1]:
+            from .point_ops import farthest_point_sample
+
+            coarse_eval = farthest_point_sample(coarse_eval, refined.shape[1])
+        coarse_cd = chamfer_distance_per_sample(coarse_eval, gt, squared=squared)
+        sample_weights = _normalized_hard_weights(coarse_cd, float(loss_cfg.get("hard_weight_alpha", 0.0)))
+    loss_cd = (refined_cd * sample_weights).mean() / sample_weights.mean().clamp_min(1e-8)
+
+    candidate_points = out["candidate_points"]
+    confidence_threshold = float(loss_cfg.get("confidence_threshold", 0.03))
+    with torch.no_grad():
+        candidate_to_gt = pairwise_dist(candidate_points, gt).min(dim=2).values
+        confidence_target = (candidate_to_gt < confidence_threshold).float()
+    loss_candidate_conf = F.binary_cross_entropy_with_logits(out["point_confidence"], confidence_target)
+
+    loss_partial = partial_preservation_loss(refined, partial)
+    lambda_repulsion = float(loss_cfg.get("lambda_repulsion", 0.01))
+    if lambda_repulsion != 0.0:
+        loss_repulse = repulsion_loss(
+            refined,
+            k=int(loss_cfg.get("repulsion_k", 5)),
+            radius=float(loss_cfg.get("repulsion_radius", 0.025)),
+        )
+    else:
+        loss_repulse = refined.new_tensor(0.0)
+    loss_delta_l2 = out["residual_delta"].square().mean()
+    probs = torch.softmax(out["source_logits"], dim=-1).clamp_min(1e-8)
+    entropy = -(probs * probs.log()).sum(dim=-1).mean()
+    loss_source_entropy = -entropy
+    loss_fscore_proxy = torch.relu(confidence_threshold - pairwise_dist(gt, refined).min(dim=2).values).neg().mean()
+
+    total = (
+        float(loss_cfg.get("lambda_cd", 1.0)) * loss_cd
+        + float(loss_cfg.get("lambda_candidate_conf", 0.05)) * loss_candidate_conf
+        + float(loss_cfg.get("lambda_partial", 0.03)) * loss_partial
+        + lambda_repulsion * loss_repulse
+        + float(loss_cfg.get("lambda_delta_l2", 0.05)) * loss_delta_l2
+        + float(loss_cfg.get("lambda_source_entropy", 0.001)) * loss_source_entropy
+        + float(loss_cfg.get("lambda_fscore_proxy", 0.0)) * loss_fscore_proxy
+    )
+    logs = {
+        "loss": float(total.detach().cpu()),
+        "loss_cd": float(loss_cd.detach().cpu()),
+        "loss_occ": 0.0,
+        "loss_delta": 0.0,
+        "loss_partial": float(loss_partial.detach().cpu()),
+        "loss_repulsion": float(loss_repulse.detach().cpu()),
+        "loss_gate_bce": 0.0,
+        "loss_gate_sparsity": 0.0,
+        "loss_delta_l2": float(loss_delta_l2.detach().cpu()),
+        "gate_mean": 0.0,
+        "gate_positive_target": 0.0,
+        "loss_candidate_conf": float(loss_candidate_conf.detach().cpu()),
+        "loss_source_entropy": float(loss_source_entropy.detach().cpu()),
+        "loss_fscore_proxy": float(loss_fscore_proxy.detach().cpu()),
+        "hard_weight_mean": float(sample_weights.detach().mean().cpu()),
+    }
+    return total, logs
+
+
 def _avg(values):
     return sum(values) / max(1, len(values))
 
@@ -167,7 +258,10 @@ def evaluate(model, loader: DataLoader, cfg: Dict, device: torch.device, max_bat
         if max_batches is not None and i >= max_batches:
             break
         batch = to_device(batch, device)
-        out = model(batch["partial"], batch["coarse"])
+        if "candidates" in batch:
+            out = model(batch["partial"], batch["coarse"], candidates=batch["candidates"], source_ids=batch.get("source_ids"))
+        else:
+            out = model(batch["partial"], batch["coarse"])
         refined = out["refined"]
         coarse = batch["coarse"]
         gt = batch["gt"]
@@ -248,6 +342,7 @@ def train(cfg: Dict, output_dir: str | Path) -> Dict[str, float]:
     metric_fields = [
         "epoch", "split", "loss", "loss_cd", "loss_occ", "loss_delta", "loss_partial", "loss_repulsion",
         "loss_gate_bce", "loss_gate_sparsity", "loss_delta_l2", "gate_mean", "gate_positive_target",
+        "loss_candidate_conf", "loss_source_entropy", "loss_fscore_proxy", "hard_weight_mean",
         "coarse_cd_pred_to_gt", "coarse_cd_gt_to_pred", "coarse_cd",
         "refined_cd_pred_to_gt", "refined_cd_gt_to_pred", "refined_cd",
         "cd_improvement_pct", "coarse_fscore", "refined_fscore", "fscore_gain", "n_samples", "lr"
@@ -262,6 +357,8 @@ def train(cfg: Dict, output_dir: str | Path) -> Dict[str, float]:
     val_every = int(train_cfg.get("val_every", 1))
     max_val_batches = train_cfg.get("max_val_batches", None)
     max_val_batches = None if max_val_batches in (None, "null") else int(max_val_batches)
+    max_train_batches = train_cfg.get("max_train_batches", None)
+    max_train_batches = None if max_train_batches in (None, "null") else int(max_train_batches)
 
     last_val = {}
     for epoch in range(start_epoch, epochs):
@@ -269,6 +366,8 @@ def train(cfg: Dict, output_dir: str | Path) -> Dict[str, float]:
         agg = []
         pbar = tqdm(train_loader, desc=f"epoch {epoch+1}/{epochs}", leave=False)
         for step, batch in enumerate(pbar):
+            if max_train_batches is not None and step >= max_train_batches:
+                break
             batch = to_device(batch, device)
             opt.zero_grad(set_to_none=True)
             with torch.amp.autocast("cuda", enabled=amp_enabled):
@@ -347,7 +446,7 @@ def main() -> None:
     parser.add_argument("--device", default=None)
     parser.add_argument("--no-local", action="store_true", help="Ablation: global feature only, no local KNN features")
     parser.add_argument("--lambda-occ", type=float, default=None, help="Override occupancy loss weight")
-    parser.add_argument("--dataset-type", default=None, choices=["synthetic", "npz", "h5", "manifest"])
+    parser.add_argument("--dataset-type", default=None, choices=["synthetic", "npz", "h5", "manifest", "candidate_manifest"])
     parser.add_argument("--data-root", default=None)
     parser.add_argument("--manifest", default=None)
     args = parser.parse_args()
