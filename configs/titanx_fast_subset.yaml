@@ -1,0 +1,47 @@
+# Fast version for first overnight run or debugging. Lower memory and faster than the full config.
+seed: 42
+model:
+  hidden_dim: 96
+  point_feature_dim: 64
+  global_dim: 128
+  fourier_bands: 5
+  k: 8
+  use_local: true
+  delta_scale: 0.12
+dataset:
+  type: manifest
+  manifest: data/manifests/pcn_train_triplets.csv
+  val_manifest: data/manifests/pcn_val_triplets.csv
+  n_partial: 1024
+  n_coarse: 1024
+  n_gt: 1024
+  normalize: true
+train:
+  epochs: 35
+  batch_size: 6
+  val_batch_size: 6
+  num_threads: 4
+  num_workers: 4
+  lr: 0.0003
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  val_every: 1
+  max_val_batches: 60
+  log_every: 20
+  device: cuda
+queries:
+  n_query: 1024
+  threshold: 0.035
+  near_ratio: 0.70
+  near_std: 0.035
+  box_scale: 1.25
+loss:
+  lambda_cd: 1.0
+  lambda_occ: 0.20
+  lambda_delta: 0.60
+  lambda_partial: 0.03
+  lambda_repulsion: 0.01
+  repulsion_radius: 0.02
+  squared_cd: false
+eval:
+  fscore_threshold: 0.03

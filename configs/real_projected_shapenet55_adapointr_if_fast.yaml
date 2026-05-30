@@ -1,0 +1,46 @@
+seed: 570
+model:
+  hidden_dim: 96
+  point_feature_dim: 64
+  global_dim: 128
+  fourier_bands: 4
+  k: 8
+  use_local: true
+  delta_scale: 0.06
+dataset:
+  type: manifest
+  manifest: data/real_projected_shapenet55_adapointr_predictions/manifests/train_triplets.csv
+  val_manifest: data/real_projected_shapenet55_adapointr_predictions/manifests/val_triplets.csv
+  n_partial: 1024
+  n_coarse: 1024
+  n_gt: 2048
+  normalize: true
+train:
+  epochs: 20
+  batch_size: 4
+  val_batch_size: 4
+  num_threads: 4
+  num_workers: 4
+  lr: 0.0002
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  val_every: 1
+  max_val_batches: null
+  log_every: 25
+  device: cuda
+  amp: false
+queries:
+  n_query: 384
+  threshold: 0.025
+  near_ratio: 0.70
+  near_std: 0.025
+  box_scale: 1.20
+loss:
+  lambda_cd: 1.0
+  lambda_occ: 0.05
+  lambda_delta: 0.75
+  lambda_partial: 0.05
+  lambda_repulsion: 0.0
+  squared_cd: false
+eval:
+  fscore_threshold: 0.02

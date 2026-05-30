@@ -1,0 +1,46 @@
+seed: 7
+model:
+  hidden_dim: 64
+  point_feature_dim: 48
+  global_dim: 96
+  fourier_bands: 4
+  k: 8
+  use_local: true
+  delta_scale: 0.16
+dataset:
+  type: synthetic
+  num_samples: 48
+  val_samples: 16
+  n_partial: 128
+  n_coarse: 256
+  n_gt: 256
+  shapes: sphere,cube,cylinder,chair,table
+  severity: mixed
+train:
+  epochs: 4
+  batch_size: 4
+  val_batch_size: 4
+  num_threads: 4
+  num_workers: 0
+  lr: 0.0008
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  val_every: 1
+  max_val_batches: 4
+  log_every: 5
+  device: cpu
+queries:
+  n_query: 192
+  threshold: 0.045
+  near_ratio: 0.7
+  near_std: 0.04
+  box_scale: 1.25
+loss:
+  lambda_cd: 1.0
+  lambda_occ: 0.0
+  lambda_delta: 0.7
+  lambda_partial: 0.02
+  lambda_repulsion: 0.0
+  squared_cd: false
+eval:
+  fscore_threshold: 0.05

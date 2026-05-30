@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pointr-if"
+version = "0.1.0"
+description = "Implicit surface refinement module for PoinTr point-cloud completion"
+requires-python = ">=3.9"
+dependencies = [
+  "torch>=1.12",
+  "numpy>=1.23",
+  "h5py>=3.8",
+  "PyYAML>=6.0",
+  "tqdm>=4.64",
+  "matplotlib>=3.6",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

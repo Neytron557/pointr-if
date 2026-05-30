@@ -1,0 +1,48 @@
+# Recommended starting point for the real CS570 experiment on a single TITAN X.
+# Use a manifest CSV with columns: id,partial,coarse,gt.
+seed: 42
+model:
+  hidden_dim: 128
+  point_feature_dim: 96
+  global_dim: 192
+  fourier_bands: 6
+  k: 12
+  use_local: true
+  delta_scale: 0.10
+dataset:
+  type: manifest
+  manifest: data/manifests/pcn_train_triplets.csv
+  val_manifest: data/manifests/pcn_val_triplets.csv
+  n_partial: 2048
+  n_coarse: 2048
+  n_gt: 2048
+  normalize: true
+train:
+  epochs: 60
+  batch_size: 4
+  val_batch_size: 4
+  num_threads: 4
+  num_workers: 4
+  lr: 0.0002
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  val_every: 2
+  max_val_batches: 100
+  log_every: 20
+  device: cuda
+queries:
+  n_query: 2048
+  threshold: 0.025
+  near_ratio: 0.70
+  near_std: 0.025
+  box_scale: 1.20
+loss:
+  lambda_cd: 1.0
+  lambda_occ: 0.20
+  lambda_delta: 0.50
+  lambda_partial: 0.05
+  lambda_repulsion: 0.02
+  repulsion_radius: 0.018
+  squared_cd: false
+eval:
+  fscore_threshold: 0.02
