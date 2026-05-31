@@ -1,80 +1,10 @@
-Archive:  deliverables/pointr_if_third_pass_seed_if.zip
-  Length      Date    Time    Name
----------  ---------- -----   ----
-      147  2026-05-30 15:27   Makefile
-     6949  2026-05-30 20:52   README.md
-      470  2026-05-30 15:27   pyproject.toml
-       85  2026-05-30 16:56   requirements.txt
-      770  2026-05-30 15:27   configs/ablation_global_only.yaml
-      768  2026-05-30 15:27   configs/ablation_no_occ.yaml
-      908  2026-05-30 18:15   configs/real_projected_shapenet55_ablation_global_only.yaml
-      906  2026-05-30 18:15   configs/real_projected_shapenet55_ablation_no_occ.yaml
-      907  2026-05-30 18:15   configs/real_projected_shapenet55_adapointr_if_fast.yaml
-      984  2026-05-30 20:22   configs/real_projected_shapenet55_gated_local_if.yaml
-     1038  2026-05-30 20:22   configs/real_projected_shapenet55_gmv_if.yaml
-     1184  2026-05-30 22:44   configs/real_projected_shapenet55_seed_if.yaml
-      769  2026-05-30 15:27   configs/smoke_synthetic.yaml
-      929  2026-05-30 15:27   configs/titanx_fast_subset.yaml
-      971  2026-05-30 15:27   configs/titanx_pcn_refiner.yaml
-     1443  2026-05-30 18:10   data/real_projected_shapenet55_adapointr_predictions/logs/command_log.txt
-     1213  2026-05-30 18:10   data/real_projected_shapenet55_adapointr_predictions/logs/test_export_summary.json
-     1208  2026-05-30 18:09   data/real_projected_shapenet55_adapointr_predictions/logs/train_export_summary.json
-     1208  2026-05-30 18:09   data/real_projected_shapenet55_adapointr_predictions/logs/val_export_summary.json
-    75165  2026-05-30 18:10   data/real_projected_shapenet55_adapointr_predictions/manifests/test_triplets.csv
-   604203  2026-05-30 18:09   data/real_projected_shapenet55_adapointr_predictions/manifests/train_triplets.csv
-    74679  2026-05-30 18:09   data/real_projected_shapenet55_adapointr_predictions/manifests/val_triplets.csv
-     1252  2026-05-30 18:31   deliverables/REAL_RESULTS_ARTIFACTS.md
-    39717  2026-05-30 20:57   deliverables/archive_listing.txt
-     8595  2026-05-30 20:53   docs/CODEX_STATUS.md
-    11500  2026-05-30 20:53   docs/EXPERIMENT_LOG.md
-     8042  2026-05-30 20:54   docs/FINAL_REPORT_TEMPLATE.md
-     6181  2026-05-30 20:52   docs/HARD_SECOND_PASS_REPORT.md
-     4771  2026-05-30 18:27   docs/IMPLEMENTATION_PLAN.md
-     4723  2026-05-30 15:27   docs/PROFESSOR_FEEDBACK_RESPONSE.md
-     1551  2026-05-30 15:27   docs/REFERENCES.md
-     7606  2026-05-30 18:29   docs/SERVER_RUNBOOK.md
-     8317  2026-05-30 23:13   docs/THIRD_PASS_SEED_POINTR_IF_REPORT.md
-     3195  2026-05-30 15:27   docs/UPLOADED_PROPOSAL_ANALYSIS.md
-      889  2026-05-30 17:00   outputs/ablation_synthetic/summary_table.csv
-      645  2026-05-30 17:00   outputs/ablation_synthetic/summary_table.md
-     1792  2026-05-30 17:00   outputs/ablation_synthetic/global_only/metrics.csv
-      770  2026-05-30 17:00   outputs/ablation_synthetic/global_only/resolved_config.yaml
-      588  2026-05-30 17:00   outputs/ablation_synthetic/global_only/summary.json
-     1787  2026-05-30 17:00   outputs/ablation_synthetic/local_occ/metrics.csv
-      769  2026-05-30 16:59   outputs/ablation_synthetic/local_occ/resolved_config.yaml
-      584  2026-05-30 17:00   outputs/ablation_synthetic/local_occ/summary.json
-     1781  2026-05-30 17:00   outputs/ablation_synthetic/no_occ/metrics.csv
-      768  2026-05-30 17:00   outputs/ablation_synthetic/no_occ/resolved_config.yaml
-      581  2026-05-30 17:00   outputs/ablation_synthetic/no_occ/summary.json
-     1348  2026-05-30 17:03   outputs/final_summary/doctor.json
-      889  2026-05-30 17:01   outputs/final_summary/summary_table.csv
-      645  2026-05-30 17:01   outputs/final_summary/summary_table.md
-     3379  2026-05-30 17:00   outputs/final_summary/tiny_manifest_validation.json
-      905  2026-05-30 18:16   outputs/real_projected_shapenet55_adapointr_if_fast/cli_resolved_config.yaml
-     1243  2026-05-30 18:16   outputs/real_projected_shapenet55_adapointr_if_fast/command_log.txt
-     8070  2026-05-30 18:20   outputs/real_projected_shapenet55_adapointr_if_fast/metrics.csv
-      578  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/real_results_summary_table.md
-      905  2026-05-30 18:16   outputs/real_projected_shapenet55_adapointr_if_fast/resolved_config.yaml
-   198325  2026-05-30 18:20   outputs/real_projected_shapenet55_adapointr_if_fast/stdout.log
-      608  2026-05-30 18:20   outputs/real_projected_shapenet55_adapointr_if_fast/summary.json
-     4746  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval_stdout.log
-     4710  2026-05-30 18:21   outputs/real_projected_shapenet55_adapointr_if_fast/val_eval_stdout.log
-    12066  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/category_metrics.csv
-    27529  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/category_metrics.json
-      905  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/checkpoint_config.yaml
-      655  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/command_log.txt
-     1364  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/metrics.json
-   108408  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/per_sample_metrics.csv
-   825484  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/qualitative_grid.png
-      642  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/summary_table.md
-    12002  2026-05-30 20:18   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/stats/paired_stats.json
-     3093  2026-05-30 20:18   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/stats/paired_stats.md
-     3506  2026-05-30 20:18   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/stats/per_category_improvement.csv
-    35395  2026-05-30 20:18   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/stats/per_sample_delta.csv
-   546248  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/visualizations/000_test_02933112_7ef036a41e1b9e2aac00fd1150223027_view0.png
-   254375  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/visualizations/001_test_04530566_49861c22df11a02b910f44c20a5d1839_view0.png
-   438667  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/visualizations/002_test_02992529_d050f7389538de04ae0591d02e40f07b_view0.png
-   336764  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/visualizations/003_test_04401088_d61ddb57397143e38d03482ac0270137_view0.png
-   419078  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/visualizations/004_test_02992529_528e6424ccdcf2af21844676433a0aca_view0.png
-   528937  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/visualizations/005_test_02954340_1eccbbbf1503c888f691355a196da5f_view0.png
-   516819  2026-05-30 18:22   outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/visualizations/006_test_04401088_fd3c1ac6cd1f94bd3982f71b09380baa_view0.png
+total 233M
+drwxrwxr-x  2 ubuntu ubuntu 4.0K May 31 00:38 .
+drwxrwxr-x 18 ubuntu ubuntu 4.0K May 30 21:04 ..
+-rw-rw-r--  1 ubuntu ubuntu 1.3K May 30 18:31 REAL_RESULTS_ARTIFACTS.md
+-rw-rw-r--  1 ubuntu ubuntu    0 May 31 00:38 archive_listing.txt
+-rw-rw-r--  1 ubuntu ubuntu  56K May 30 17:06 pointr_if_final_submission.zip
+-rw-rw-r--  1 ubuntu ubuntu  34K May 31 00:38 pointr_if_fourth_pass_mvc_tools.zip
+-rw-rw-r--  1 ubuntu ubuntu  43M May 30 20:57 pointr_if_hard_second_pass.zip
+-rw-rw-r--  1 ubuntu ubuntu 147M May 30 18:31 pointr_if_real_projected_shapenet55_results.zip
+-rw-rw-r--  1 ubuntu ubuntu  44M May 30 23:16 pointr_if_third_pass_seed_if.zip

@@ -142,6 +142,8 @@ The naive learned PoinTr-IF refiner gave a small, non-significant improvement ov
 
 The visible-anchor baseline did not improve Chamfer on this subset. This is useful negative evidence: directly mixing observed partial points with AdaPoinTr coarse output can hurt global point-set balance even though the observed points are real surface samples. The final presentation should show this as an ablation, not as a successful component.
 
+Fourth-pass status: the SEED/candidate-bank post-processing path is no longer treated as deployable because its oracle headroom was too small. The follow-up implementation is MVC-PoinTr-IF, which fine-tunes AdaPoinTr directly with train-only multi-view consistency. Its success gate is held-out test CD <= 0.04219 under the audited FPS-4096 protocol; no fourth-pass result should be reported as successful until a validation-selected checkpoint reaches that gate. See `docs/FOURTH_PASS_MV_CONSISTENCY_REPORT.md`.
+
 The local projected data cap prevented scaling beyond 1200/150/150 in this environment, despite larger official split metadata. Future work should run on the full official projected set or PCN after gated download access, use mesh-derived occupancy labels where available, and integrate PoinTr/AdaPoinTr features directly rather than refining only exported point sets.
 
 ## Conclusion

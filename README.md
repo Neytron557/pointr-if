@@ -34,6 +34,22 @@ All methods below were evaluated on the same held-out real test sample IDs with 
 
 The old naive refiner is retained as a baseline because its gain was not statistically significant. The final gated multi-view refiner is still a lightweight post-processor, but its held-out improvement is larger and significant under paired bootstrap, paired t-test, and Wilcoxon tests.
 
+## Fourth-Pass MVC Work
+
+The third-pass SEED/candidate-bank post-processing direction is no longer treated as deployable. The fourth pass implements `MVC-PoinTr-IF`, which fine-tunes AdaPoinTr itself with multi-view consistency rather than refining exported points after inference.
+
+The audited FPS-4096 held-out baseline is `0.044413` CD, so the fourth-pass success gate is `<=0.04219` held-out test CD. No fourth-pass success is claimed until a validation-selected MVC checkpoint reaches that held-out threshold under `n_partial=2048`, `n_coarse=4096`, `n_gt=4096`, `n_output=4096`, `eval_seed=200570`, and `input_seed=570`.
+
+Implemented entrypoints:
+
+```bash
+bash scripts/build_fourth_pass_groups.sh
+bash scripts/train_mvc_pointr_if.sh outputs/fourth_pass/adapointr_ft_cd
+bash scripts/evaluate_mvc_pointr_if.sh outputs/fourth_pass/adapointr_ft_cd/ckpt-best.pth outputs/fourth_pass/adapointr_ft_cd/test_eval test
+```
+
+See `docs/FOURTH_PASS_MV_CONSISTENCY_REPORT.md` for the group audit, generated train-only view summary, smoke checks, and full run commands.
+
 ## Key Artifacts
 
 - Coarse export manifests: `data/real_projected_shapenet55_adapointr_predictions/manifests/`.
