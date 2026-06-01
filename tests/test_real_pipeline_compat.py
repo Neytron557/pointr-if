@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from pointr_if.io import read_manifest, save_point_cloud
+from pointr_if.datasets import ManifestTripletDataset
 
 
 def test_real_manifest_columns_are_normalized(tmp_path):
@@ -47,6 +48,74 @@ def test_real_manifest_columns_are_normalized(tmp_path):
     assert rows[0]["partial"] == rows[0]["partial_path"]
     assert rows[0]["coarse"] == rows[0]["coarse_path"]
     assert rows[0]["gt"] == rows[0]["gt_path"]
+
+
+def test_manifest_remaps_legacy_project_root(tmp_path, monkeypatch):
+    import pointr_if.io as io_mod
+
+    project_root = tmp_path / "pointr_if_project"
+    project_root.mkdir()
+    partial = project_root / "partial.npy"
+    coarse = project_root / "coarse.npy"
+    gt = project_root / "gt.npy"
+    for path in (partial, coarse, gt):
+        save_point_cloud(path, np.zeros((4, 3), dtype=np.float32))
+    monkeypatch.setattr(io_mod, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(io_mod, "LEGACY_PROJECT_ROOTS", (Path("/old/root/pointr_if_project"),))
+
+    manifest = tmp_path / "legacy.csv"
+    with manifest.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["sample_id", "category", "partial_path", "coarse_path", "gt_path", "split"])
+        writer.writeheader()
+        writer.writerow(
+            {
+                "sample_id": "sample-1",
+                "category": "chair",
+                "partial_path": "/old/root/pointr_if_project/partial.npy",
+                "coarse_path": "/old/root/pointr_if_project/coarse.npy",
+                "gt_path": "/old/root/pointr_if_project/gt.npy",
+                "split": "val",
+            }
+        )
+
+    rows = read_manifest(manifest)
+
+    assert rows[0]["partial"] == str(partial.resolve())
+
+
+def test_manifest_dataset_loads_aligned_coarse_features(tmp_path):
+    partial = tmp_path / "partial.npy"
+    coarse = tmp_path / "coarse.npy"
+    gt = tmp_path / "gt.npy"
+    feature_path = tmp_path / "features.npz"
+    save_point_cloud(partial, np.zeros((4, 3), dtype=np.float32))
+    save_point_cloud(coarse, np.ones((8, 3), dtype=np.float32))
+    save_point_cloud(gt, np.zeros((8, 3), dtype=np.float32))
+    np.savez_compressed(feature_path, features=np.ones((8, 384), dtype=np.float16))
+    manifest = tmp_path / "triplets.csv"
+    with manifest.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["sample_id", "category", "partial_path", "coarse_path", "gt_path", "feature_path", "split"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "sample_id": "sample-1",
+                "category": "chair",
+                "partial_path": str(partial),
+                "coarse_path": str(coarse),
+                "gt_path": str(gt),
+                "feature_path": str(feature_path),
+                "split": "train",
+            }
+        )
+
+    dataset = ManifestTripletDataset(manifest, n_partial=4, n_coarse=8, n_gt=8, normalize=False, seed=0)
+    item = dataset[0]
+
+    assert item["coarse"].shape == (8, 3)
+    assert item["coarse_features"].shape == (8, 384)
 
 
 def test_pointnet2_fallback_fps_and_gather_shapes():

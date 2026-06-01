@@ -9,11 +9,17 @@ description = "Implicit surface refinement module for PoinTr point-cloud complet
 requires-python = ">=3.9"
 dependencies = [
   "torch>=1.12",
+  "torchvision>=0.13",
   "numpy>=1.23",
   "h5py>=3.8",
   "PyYAML>=6.0",
   "tqdm>=4.64",
   "matplotlib>=3.6",
+  "scipy>=1.10",
+  "easydict>=1.13",
+  "einops>=0.6",
+  "tensorboardX>=2.6",
+  "timm==0.4.5",
 ]
 
 [tool.setuptools]

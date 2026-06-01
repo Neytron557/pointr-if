@@ -1,0 +1,136 @@
+diff --git a/extensions/chamfer_dist/__init__.py b/extensions/chamfer_dist/__init__.py
+index 6524071..118e37a 100644
+--- a/extensions/chamfer_dist/__init__.py
++++ b/extensions/chamfer_dist/__init__.py
+@@ -7,12 +7,24 @@
+ 
+ import torch
+ 
+-import chamfer
++try:
++    import chamfer
++except ModuleNotFoundError:
++    chamfer = None
++
++
++def _chamfer_distances(xyz1, xyz2):
++    if chamfer is not None:
++        return ChamferFunction.apply(xyz1, xyz2)
++    dist = torch.cdist(xyz1, xyz2, p=2).square()
++    return dist.min(dim=2).values, dist.min(dim=1).values
+ 
+ 
+ class ChamferFunction(torch.autograd.Function):
+     @staticmethod
+     def forward(ctx, xyz1, xyz2):
++        if chamfer is None:
++            raise RuntimeError("Compiled chamfer extension is unavailable; use _chamfer_distances instead.")
+         dist1, dist2, idx1, idx2 = chamfer.forward(xyz1, xyz2)
+         ctx.save_for_backward(xyz1, xyz2, idx1, idx2)
+ 
+@@ -40,7 +52,7 @@ class ChamferDistanceL2(torch.nn.Module):
+             xyz1 = xyz1[non_zeros1].unsqueeze(dim=0)
+             xyz2 = xyz2[non_zeros2].unsqueeze(dim=0)
+ 
+-        dist1, dist2 = ChamferFunction.apply(xyz1, xyz2)
++        dist1, dist2 = _chamfer_distances(xyz1, xyz2)
+         return torch.mean(dist1) + torch.mean(dist2)
+ 
+ class ChamferDistanceL2_split(torch.nn.Module):
+@@ -58,7 +70,7 @@ class ChamferDistanceL2_split(torch.nn.Module):
+             xyz1 = xyz1[non_zeros1].unsqueeze(dim=0)
+             xyz2 = xyz2[non_zeros2].unsqueeze(dim=0)
+ 
+-        dist1, dist2 = ChamferFunction.apply(xyz1, xyz2)
++        dist1, dist2 = _chamfer_distances(xyz1, xyz2)
+         return torch.mean(dist1), torch.mean(dist2)
+ 
+ class ChamferDistanceL1(torch.nn.Module):
+@@ -76,7 +88,7 @@ class ChamferDistanceL1(torch.nn.Module):
+             xyz1 = xyz1[non_zeros1].unsqueeze(dim=0)
+             xyz2 = xyz2[non_zeros2].unsqueeze(dim=0)
+ 
+-        dist1, dist2 = ChamferFunction.apply(xyz1, xyz2)
++        dist1, dist2 = _chamfer_distances(xyz1, xyz2)
+         # import pdb
+         # pdb.set_trace()
+         dist1 = torch.sqrt(dist1)
+@@ -98,7 +110,6 @@ class ChamferDistanceL1_PM(torch.nn.Module):
+             xyz1 = xyz1[non_zeros1].unsqueeze(dim=0)
+             xyz2 = xyz2[non_zeros2].unsqueeze(dim=0)
+ 
+-        dist1, _ = ChamferFunction.apply(xyz1, xyz2)
++        dist1, _ = _chamfer_distances(xyz1, xyz2)
+         dist1 = torch.sqrt(dist1)
+         return torch.mean(dist1)
+-
+diff --git a/models/__init__.py b/models/__init__.py
+index 0b4bf5a..a84ff29 100644
+--- a/models/__init__.py
++++ b/models/__init__.py
+@@ -1,8 +1,2 @@
+ from .build import build_model_from_cfg
+-import models.TopNet
+-import models.PoinTr
+-import models.GRNet
+-import models.PCN
+-import models.FoldingNet
+-import models.SnowFlakeNet
+-import models.AdaPoinTr
+\ No newline at end of file
++import models.AdaPoinTr
+diff --git a/pointnet2_ops/__init__.py b/pointnet2_ops/__init__.py
+new file mode 100644
+index 0000000..d441e0a
+--- /dev/null
++++ b/pointnet2_ops/__init__.py
+@@ -0,0 +1,3 @@
++from . import pointnet2_utils
++
++__all__ = ["pointnet2_utils"]
+diff --git a/pointnet2_ops/pointnet2_utils.py b/pointnet2_ops/pointnet2_utils.py
+new file mode 100644
+index 0000000..dcb6347
+--- /dev/null
++++ b/pointnet2_ops/pointnet2_utils.py
+@@ -0,0 +1,40 @@
++"""Small PyTorch fallback for the PointNet++ ops used by AdaPoinTr inference.
++
++The original project expects the external ``pointnet2_ops`` CUDA extension.
++For this experiment we only need farthest-point sampling and feature gather.
++These implementations run on the input tensor device and preserve the same
++shapes as the extension API.
++"""
++
++from __future__ import annotations
++
++import torch
++
++
++def furthest_point_sample(xyz: torch.Tensor, npoint: int) -> torch.Tensor:
++    if xyz.ndim != 3 or xyz.shape[-1] != 3:
++        raise ValueError(f"xyz must be [B, N, 3], got {tuple(xyz.shape)}")
++    bsz, n_points, _ = xyz.shape
++    npoint = min(int(npoint), n_points)
++    centroids = torch.zeros(bsz, npoint, dtype=torch.long, device=xyz.device)
++    distance = torch.full((bsz, n_points), float("inf"), device=xyz.device, dtype=xyz.dtype)
++    farthest = torch.zeros(bsz, dtype=torch.long, device=xyz.device)
++    batch_indices = torch.arange(bsz, dtype=torch.long, device=xyz.device)
++
++    for i in range(npoint):
++        centroids[:, i] = farthest
++        centroid = xyz[batch_indices, farthest].view(bsz, 1, 3)
++        dist = ((xyz - centroid) ** 2).sum(dim=-1)
++        distance = torch.minimum(distance, dist)
++        farthest = distance.max(dim=1).indices
++    return centroids
++
++
++def gather_operation(features: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
++    if features.ndim != 3:
++        raise ValueError(f"features must be [B, C, N], got {tuple(features.shape)}")
++    if idx.ndim != 2:
++        raise ValueError(f"idx must be [B, S], got {tuple(idx.shape)}")
++    idx = idx.to(device=features.device, dtype=torch.long)
++    expanded = idx.unsqueeze(1).expand(-1, features.shape[1], -1)
++    return features.gather(dim=2, index=expanded)

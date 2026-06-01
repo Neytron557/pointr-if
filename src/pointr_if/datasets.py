@@ -134,19 +134,57 @@ class ManifestTripletDataset(Dataset):
         partial = load_point_cloud(row["partial"])
         coarse = load_point_cloud(row["coarse"])
         gt = load_point_cloud(row["gt"])
+        coarse_features = None
+        feature_path = row.get("feature_path") or row.get("coarse_feature_path")
+        if feature_path:
+            payload = np.load(feature_path)
+            if isinstance(payload, np.lib.npyio.NpzFile):
+                key = "features" if "features" in payload else payload.files[0]
+                coarse_features = np.asarray(payload[key], dtype=np.float32)
+            else:
+                coarse_features = np.asarray(payload, dtype=np.float32)
+            if coarse_features.ndim != 2:
+                raise ValueError(f"Expected coarse features [N,C] in {feature_path}, got {coarse_features.shape}")
         if self.normalize:
             center = gt.mean(axis=0, keepdims=True)
             scale = np.sqrt(((gt - center) ** 2).sum(axis=1)).max().clip(1e-8)
             partial, coarse, gt = (partial - center) / scale, (coarse - center) / scale, (gt - center) / scale
-        return {
-            "partial": torch.from_numpy(resample_points_np(partial, self.n_partial, rng, mode=self.resample_mode)),
-            "coarse": torch.from_numpy(resample_points_np(coarse, self.n_coarse, rng, mode=self.resample_mode)),
-            "gt": torch.from_numpy(resample_points_np(gt, self.n_gt, rng, mode=self.resample_mode)),
+        partial = resample_points_np(partial, self.n_partial, rng, mode=self.resample_mode)
+        gt = resample_points_np(gt, self.n_gt, rng, mode=self.resample_mode)
+        if coarse_features is not None and coarse.shape[0] == coarse_features.shape[0]:
+            coarse, coarse_features = self._resample_coarse_with_features(coarse, coarse_features, rng)
+        else:
+            coarse = resample_points_np(coarse, self.n_coarse, rng, mode=self.resample_mode)
+
+        item: Dict[str, torch.Tensor | str] = {
+            "partial": torch.from_numpy(partial),
+            "coarse": torch.from_numpy(coarse),
+            "gt": torch.from_numpy(gt),
             "id": row.get("id") or Path(row["gt"]).stem,
             "sample_id": row.get("sample_id") or row.get("id") or Path(row["gt"]).stem,
             "category": row.get("category", ""),
             "split": row.get("split", ""),
         }
+        if coarse_features is not None:
+            item["coarse_features"] = torch.from_numpy(coarse_features.astype(np.float32))
+        return item
+
+    def _resample_coarse_with_features(
+        self,
+        coarse: np.ndarray,
+        features: np.ndarray,
+        rng: np.random.Generator,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if self.resample_mode == "none" or self.n_coarse is None or coarse.shape[0] == self.n_coarse:
+            return coarse.astype(np.float32), features.astype(np.float32)
+        if self.resample_mode != "random":
+            coarse = resample_points_np(coarse, self.n_coarse, rng, mode=self.resample_mode)
+            if features.shape[0] == coarse.shape[0]:
+                return coarse.astype(np.float32), features.astype(np.float32)
+            raise ValueError("Feature-aligned coarse resampling currently requires random mode or matching point counts.")
+        replace = coarse.shape[0] < self.n_coarse
+        idx = rng.choice(coarse.shape[0], size=self.n_coarse, replace=replace)
+        return coarse[idx].astype(np.float32), features[idx].astype(np.float32)
 
 
 class H5TripletDataset(Dataset):

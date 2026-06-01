@@ -1,5 +1,47 @@
 # Experiment Log
 
+## A100 PCN Run B: Final Selected Result
+
+Date: 2026-06-01
+
+The final selected result uses the gated PCN / ShapeNetCompletion dataset and the AdaPoinTr PCN checkpoint. Run B exports AdaPoinTr dense completions plus aligned decoder features, then trains a backbone-feature-conditioned `feature_gmv` refiner.
+
+Final held-out PCN test table:
+
+| method | n | chamfer | fscore |
+|---|---:|---:|---:|
+| anchor | 1200 | 0.042830 | 0.596364 |
+| coarse | 1200 | 0.043141 | 0.586850 |
+| partial | 1200 | 0.151631 | 0.326790 |
+| refined | 1200 | 0.041547 | 0.613169 |
+
+Paired statistics versus AdaPoinTr coarse:
+
+- Mean CD improvement: `3.6936%`.
+- Bootstrap 95% CI: `[3.6073%, 3.7810%]`.
+- Positive / negative / zero samples: `1186 / 14 / 0`.
+- Mean F-score delta: `0.02631900`.
+- Paired t-test p-value: `0.0`.
+- Wilcoxon p-value: `2.737593353866877e-194`.
+
+Tracked artifacts:
+
+```text
+checkpoints/run_b/best.pt
+results/a100_full_improvement/run_b_feature_refiner/test_eval/stats/paired_stats.md
+results/a100_full_improvement/run_b_feature_refiner/test_eval/per_sample_metrics.csv
+results/a100_full_improvement/run_b_feature_refiner/test_eval/stats/per_category_improvement.csv
+docs/A100_PCN_RESULTS.md
+```
+
+Run A was also implemented and evaluated, but it failed:
+
+- Baseline test CD: `0.040271`.
+- Candidate test CD: `0.048130`.
+- Mean CD improvement: `-19.5151%`.
+
+No Run A checkpoints are tracked.
+
 ## Hard Second Pass: GMV-PoinTr-IF
 
 Date: 2026-05-30

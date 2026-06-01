@@ -1,0 +1,11 @@
+{
+  "best_val_cd": 0.046063579957699406,
+  "baseline_val_cd": 0.03858194175350946,
+  "best_val_improvement_percent": -19.391554349411173,
+  "best_checkpoint": "outputs/a100_full_improvement/run_a_pcn_mvc/ckpt-best.pth",
+  "metrics_csv": "outputs/a100_full_improvement/run_a_pcn_mvc/metrics.csv",
+  "trainable_counts": {
+    "trainable": 26824929,
+    "frozen": 5669728
+  }
+}

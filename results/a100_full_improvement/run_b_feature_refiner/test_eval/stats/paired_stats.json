@@ -1,0 +1,170 @@
+{
+  "source": "outputs/a100_full_improvement/run_b_feature_refiner/test_eval/per_sample_metrics.csv",
+  "aggregate_methods": {
+    "anchor": {
+      "n_samples": 1200,
+      "chamfer": 0.042829745016060766,
+      "fscore": 0.5963639597346385
+    },
+    "coarse": {
+      "n_samples": 1200,
+      "chamfer": 0.043140948337968436,
+      "fscore": 0.586849903749923
+    },
+    "partial": {
+      "n_samples": 1200,
+      "chamfer": 0.15163107773444304,
+      "fscore": 0.32679044368276666
+    },
+    "refined": {
+      "n_samples": 1200,
+      "chamfer": 0.04154748720310939,
+      "fscore": 0.6131689028938612
+    }
+  },
+  "paired": {
+    "baseline_method": "coarse",
+    "candidate_method": "refined",
+    "n_samples": 1200,
+    "baseline_chamfer": 0.043140948337968436,
+    "candidate_chamfer": 0.04154748720310939,
+    "mean_cd_delta": 0.0015934611348590504,
+    "median_cd_delta": 0.0015581343322992325,
+    "mean_cd_improvement_percent": 3.6936163812992415,
+    "median_sample_cd_improvement_percent": 3.853044729366025,
+    "mean_fscore_delta": 0.026318999143938225,
+    "positive_count": 1186,
+    "negative_count": 14,
+    "zero_count": 0,
+    "positive_fraction": 0.9883333333333333,
+    "bootstrap_ci95_cd_improvement_percent": [
+      3.607281462555228,
+      3.7810483400698387
+    ],
+    "bootstrap_ci95_mean_cd_delta": [
+      0.001552051259893536,
+      0.0016372625499401086
+    ],
+    "n_bootstrap": 5000,
+    "scipy_available": true,
+    "paired_ttest_pvalue": 0.0,
+    "paired_ttest_statistic": 71.9210003151921,
+    "wilcoxon_pvalue": 2.737593353866877e-194,
+    "wilcoxon_statistic": 3261.0,
+    "test_note": ""
+  },
+  "oracle": {
+    "label": "oracle_non_deployable_choose_best_per_sample_cd",
+    "n_samples": 1200,
+    "chamfer": 0.041538743459386754,
+    "fscore": 0.6130065659806132,
+    "candidate_chosen_count": 1186,
+    "baseline_chosen_count": 14
+  },
+  "per_category": [
+    {
+      "category": "02691156",
+      "n_samples": 150,
+      "baseline_chamfer": 0.02905412928511699,
+      "candidate_chamfer": 0.027966398199399313,
+      "mean_cd_delta": 0.0010877310857176782,
+      "median_cd_delta": 0.001040114089846611,
+      "mean_cd_improvement_percent": 3.743808926584728,
+      "mean_fscore_delta": 0.026792978644371034,
+      "positive_count": 149,
+      "negative_count": 1,
+      "zero_count": 0
+    },
+    {
+      "category": "02933112",
+      "n_samples": 150,
+      "baseline_chamfer": 0.0558520553757747,
+      "candidate_chamfer": 0.05379267501334349,
+      "mean_cd_delta": 0.0020593803624312083,
+      "median_cd_delta": 0.0021204426884651184,
+      "mean_cd_improvement_percent": 3.687206045642586,
+      "mean_fscore_delta": 0.0258588582277298,
+      "positive_count": 146,
+      "negative_count": 4,
+      "zero_count": 0
+    },
+    {
+      "category": "02958343",
+      "n_samples": 150,
+      "baseline_chamfer": 0.052337289998928706,
+      "candidate_chamfer": 0.05039239555597305,
+      "mean_cd_delta": 0.0019448944429556528,
+      "median_cd_delta": 0.0019808337092399597,
+      "mean_cd_improvement_percent": 3.7160778538504076,
+      "mean_fscore_delta": 0.02200281689564387,
+      "positive_count": 150,
+      "negative_count": 0,
+      "zero_count": 0
+    },
+    {
+      "category": "03001627",
+      "n_samples": 150,
+      "baseline_chamfer": 0.045148257613182065,
+      "candidate_chamfer": 0.043532159614066285,
+      "mean_cd_delta": 0.001616097999115785,
+      "median_cd_delta": 0.0015711840242147446,
+      "mean_cd_improvement_percent": 3.5795356998315775,
+      "mean_fscore_delta": 0.0286663090189298,
+      "positive_count": 149,
+      "negative_count": 1,
+      "zero_count": 0
+    },
+    {
+      "category": "03636649",
+      "n_samples": 150,
+      "baseline_chamfer": 0.03342041698594888,
+      "candidate_chamfer": 0.03225224120231966,
+      "mean_cd_delta": 0.0011681757836292188,
+      "median_cd_delta": 0.0010659443214535713,
+      "mean_cd_improvement_percent": 3.495395596411498,
+      "mean_fscore_delta": 0.021286050975322723,
+      "positive_count": 146,
+      "negative_count": 4,
+      "zero_count": 0
+    },
+    {
+      "category": "04256520",
+      "n_samples": 150,
+      "baseline_chamfer": 0.054429820279280346,
+      "candidate_chamfer": 0.05237436133126418,
+      "mean_cd_delta": 0.002055458948016167,
+      "median_cd_delta": 0.0020957589149475098,
+      "mean_cd_improvement_percent": 3.776347115367226,
+      "mean_fscore_delta": 0.02310873568058014,
+      "positive_count": 148,
+      "negative_count": 2,
+      "zero_count": 0
+    },
+    {
+      "category": "04379243",
+      "n_samples": 150,
+      "baseline_chamfer": 0.03926255935182174,
+      "candidate_chamfer": 0.03763628457983335,
+      "mean_cd_delta": 0.0016262747719883919,
+      "median_cd_delta": 0.0015976056456565857,
+      "mean_cd_improvement_percent": 4.142049827714393,
+      "mean_fscore_delta": 0.037479008038838704,
+      "positive_count": 149,
+      "negative_count": 1,
+      "zero_count": 0
+    },
+    {
+      "category": "04530566",
+      "n_samples": 150,
+      "baseline_chamfer": 0.03562305781369408,
+      "candidate_chamfer": 0.03443338212867578,
+      "mean_cd_delta": 0.001189675685018301,
+      "median_cd_delta": 0.0011403625831007957,
+      "mean_cd_improvement_percent": 3.3396225872585528,
+      "mean_fscore_delta": 0.025357235670089722,
+      "positive_count": 149,
+      "negative_count": 1,
+      "zero_count": 0
+    }
+  ]
+}

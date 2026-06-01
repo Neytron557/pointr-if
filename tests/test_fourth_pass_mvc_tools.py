@@ -12,6 +12,7 @@ import torch
 sys.path.insert(0, str(Path("tools").resolve()))
 
 from build_multiview_groups import build_groups_for_manifest
+from build_pcn_artifacts import build_pcn_artifacts
 from generate_train_projected_views import project_visible_points
 from train_adapointr_multiview_consistency import build_optimizer, set_trainable_modules
 from pointr_if.io import load_point_cloud, save_point_cloud
@@ -79,6 +80,49 @@ def test_project_visible_points_is_deterministic_and_finite() -> None:
     assert first.shape == (32, 3)
     assert np.isfinite(first).all()
     np.testing.assert_allclose(first, second)
+
+
+def test_build_pcn_artifacts_writes_groups_and_source_manifests(tmp_path: Path) -> None:
+    root = tmp_path / "ShapeNetCompletion"
+    category = "03001627"
+    model = "abc"
+    for split, views in (("train", 8), ("val", 1), ("test", 1)):
+        complete_dir = root / split / "complete" / category
+        partial_dir = root / split / "partial" / category / model
+        complete_dir.mkdir(parents=True)
+        partial_dir.mkdir(parents=True)
+        (complete_dir / f"{model}.pcd").write_text(
+            "\n".join(
+                [
+                    "# .PCD v0.7",
+                    "VERSION 0.7",
+                    "FIELDS x y z",
+                    "SIZE 4 4 4",
+                    "TYPE F F F",
+                    "COUNT 1 1 1",
+                    "WIDTH 1",
+                    "HEIGHT 1",
+                    "POINTS 1",
+                    "DATA ascii",
+                    "0 0 0",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        for view in range(views):
+            (partial_dir / f"{view:02d}.pcd").write_text((complete_dir / f"{model}.pcd").read_text(), encoding="utf-8")
+    category_json = tmp_path / "PCN.json"
+    category_json.write_text(
+        json.dumps([{"taxonomy_id": category, "taxonomy_name": "chair", "train": [model], "val": [model], "test": [model]}]),
+        encoding="utf-8",
+    )
+
+    summary = build_pcn_artifacts(pcn_root=root, category_json=category_json, out_dir=tmp_path / "out")
+
+    assert summary["splits"]["train"]["n_groups"] == 1
+    assert summary["splits"]["train"]["views_per_group"] == 8
+    assert Path(summary["splits"]["val"]["source_manifest"]).exists()
 
 
 class _DummyAda(torch.nn.Module):

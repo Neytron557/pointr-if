@@ -10,6 +10,7 @@ import os
 import random
 import shlex
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
@@ -25,7 +26,7 @@ POINTR_ROOT = ROOT / "external" / "PoinTr"
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(POINTR_ROOT))
 
-from pointr_if.io import load_point_cloud
+from pointr_if.io import load_point_cloud, resolve_project_path
 from pointr_if.point_ops import chamfer_components, fscore, resample_points_np, set_seed
 
 
@@ -149,7 +150,7 @@ class MultiViewGroupDataset(Dataset):
         n_gt: int,
         seed: int,
     ):
-        self.groups = json.loads(Path(groups_path).read_text(encoding="utf-8"))
+        self.groups = json.loads(resolve_project_path(groups_path).read_text(encoding="utf-8"))
         if not self.groups:
             raise ValueError(f"No groups found in {groups_path}")
         self.views_per_object = int(views_per_object)
@@ -199,7 +200,7 @@ class ManifestEvalDataset(Dataset):
     ):
         from pointr_if.io import read_manifest
 
-        self.rows = read_manifest(manifest)
+        self.rows = read_manifest(resolve_project_path(manifest))
         self.n_partial = int(n_partial)
         self.n_gt = int(n_gt)
         self.n_output = int(n_output)
@@ -242,6 +243,23 @@ def _fps(points: torch.Tensor, n: int) -> torch.Tensor:
     from utils import misc
 
     return misc.fps(points, int(n))
+
+
+def _sample_points(points: torch.Tensor, n: int, mode: str) -> torch.Tensor:
+    mode = str(mode).lower()
+    if mode == "fps":
+        return _fps(points, n)
+    if mode != "random":
+        raise ValueError(f"Unsupported point sample mode: {mode}")
+    n = int(n)
+    total = int(points.shape[1])
+    if total == n:
+        return points
+    if total < n:
+        repeats = (n + total - 1) // total
+        return points.repeat(1, repeats, 1)[:, :n, :]
+    idx = torch.stack([torch.randperm(total, device=points.device)[:n] for _ in range(points.shape[0])], dim=0)
+    return points.gather(1, idx.unsqueeze(-1).expand(-1, -1, points.shape[-1]))
 
 
 def _metric_row(sample_id: str, category: str, split: str, method: str, pred: torch.Tensor, gt: torch.Tensor) -> dict[str, Any]:
@@ -381,8 +399,14 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested for MVC training but unavailable")
+    if int(args.num_threads) > 0:
+        torch.set_num_threads(int(args.num_threads))
+    if device.type == "cuda":
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
     set_seed(int(args.seed))
     random.seed(int(args.seed))
+    started_at = time.monotonic()
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "resolved_args.json").write_text(json.dumps(vars(args), indent=2, default=str) + "\n", encoding="utf-8")
@@ -395,6 +419,9 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         unfreeze_last_encoder_blocks=int(args.unfreeze_last_encoder_blocks),
     )
     optimizer = build_optimizer(model, lr_decoder=args.lr_decoder, lr_encoder=args.lr_encoder, weight_decay=args.weight_decay)
+    scheduler = None
+    if args.scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, int(args.epochs)))
     scaler = torch.amp.GradScaler("cuda", enabled=bool(args.amp and device.type == "cuda"))
     chamfer_l1 = _load_chamfer_l1()
 
@@ -405,7 +432,14 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         n_gt=args.n_gt,
         seed=args.seed,
     )
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=False)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=device.type == "cuda",
+        drop_last=False,
+    )
     metrics_path = out_dir / "metrics.csv"
     metric_fields = [
         "epoch",
@@ -435,6 +469,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         model.train()
         accum = {"loss": 0.0, "loss_rec": 0.0, "loss_target": 0.0, "loss_self": 0.0, "loss_missing": 0.0}
         batches = 0
+        optimizer_stepped = False
+        time_budget_reached = False
         optimizer.zero_grad(set_to_none=True)
         for step, batch in enumerate(tqdm(train_loader, desc=f"train epoch {epoch}")):
             if args.max_train_batches is not None and step >= int(args.max_train_batches):
@@ -452,9 +488,9 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 loss_denoised, loss_recon = model.get_loss(ret, flat_gt_full, epoch)
                 loss_rec = loss_denoised + loss_recon
                 pred_fine = ret[-1]
-                pred_eval = _fps(pred_fine, int(args.n_output))
+                pred_eval = _sample_points(pred_fine, int(args.n_output), args.target_sample_mode)
                 loss_target = chamfer_l1(pred_eval, flat_gt_eval)
-                pred_self = _fps(pred_fine, int(args.self_points)).reshape(b, k, int(args.self_points), 3)
+                pred_self = _sample_points(pred_fine, int(args.self_points), args.target_sample_mode).reshape(b, k, int(args.self_points), 3)
                 if k > 1 and float(args.lambda_self) != 0.0:
                     pair_losses = []
                     for i in range(k):
@@ -476,8 +512,10 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             if (step + 1) % int(args.grad_accum_steps) == 0:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.grad_clip))
+                scale_before_step = scaler.get_scale()
                 scaler.step(optimizer)
                 scaler.update()
+                optimizer_stepped = optimizer_stepped or (not bool(args.amp and device.type == "cuda") or scaler.get_scale() >= scale_before_step)
                 optimizer.zero_grad(set_to_none=True)
             accum["loss"] += float(loss.detach().cpu()) * int(args.grad_accum_steps)
             accum["loss_rec"] += float(loss_rec.detach().cpu())
@@ -485,12 +523,21 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             accum["loss_self"] += float(loss_self.detach().cpu())
             accum["loss_missing"] += float(loss_missing.detach().cpu())
             batches += 1
+            if args.time_budget_hours is not None:
+                elapsed_hours = (time.monotonic() - started_at) / 3600.0
+                if elapsed_hours >= float(args.time_budget_hours):
+                    time_budget_reached = True
+                    break
         if batches and batches % int(args.grad_accum_steps) != 0:
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), float(args.grad_clip))
+            scale_before_step = scaler.get_scale()
             scaler.step(optimizer)
             scaler.update()
+            optimizer_stepped = optimizer_stepped or (not bool(args.amp and device.type == "cuda") or scaler.get_scale() >= scale_before_step)
             optimizer.zero_grad(set_to_none=True)
+        if scheduler is not None and optimizer_stepped:
+            scheduler.step()
 
         train_row = {
             "epoch": epoch,
@@ -571,6 +618,11 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         if worsen_streak >= 3:
             print("Early stop: validation CD worsened by >3% for 3 consecutive epochs.")
             break
+        if args.time_budget_hours is not None:
+            elapsed_hours = (time.monotonic() - started_at) / 3600.0
+            if time_budget_reached or elapsed_hours >= float(args.time_budget_hours):
+                print(f"Time budget reached after {elapsed_hours:.2f} hours.")
+                break
 
     summary = {
         "best_val_cd": best_val_cd,
@@ -617,6 +669,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--num-threads", type=int, default=4)
+    parser.add_argument("--target-sample-mode", choices=["fps", "random"], default="fps")
+    parser.add_argument("--scheduler", choices=["none", "cosine"], default="none")
+    parser.add_argument("--time-budget-hours", type=float, default=None)
     parser.add_argument("--max-train-batches", type=int, default=None)
     parser.add_argument("--max-val-samples", type=int, default=None)
     parser.add_argument("--save-val-outputs", action="store_true")

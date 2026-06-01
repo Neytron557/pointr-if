@@ -1,0 +1,18 @@
+{
+  "best_refined_cd": 0.04176894806325435,
+  "last_val": {
+    "coarse_cd_pred_to_gt": 0.019779855608940123,
+    "coarse_cd_gt_to_pred": 0.02367834197357297,
+    "coarse_cd": 0.04345819715410471,
+    "refined_cd_pred_to_gt": 0.019767996463924645,
+    "refined_cd_gt_to_pred": 0.02214461287483573,
+    "refined_cd": 0.041912609077990055,
+    "coarse_fscore": 0.5883465176820755,
+    "refined_fscore": 0.6159965389966965,
+    "cd_improvement_pct": 3.5564937740834766,
+    "fscore_gain": 0.02765002131462102,
+    "n_samples": 800
+  },
+  "output_dir": "outputs/a100_full_improvement/run_b_feature_refiner",
+  "stopped_by_time_budget": true
+}

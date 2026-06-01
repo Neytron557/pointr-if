@@ -12,6 +12,11 @@ CONFIG="${CONFIG:-external/PoinTr/cfgs/Projected_ShapeNet55_models/AdaPoinTr.yam
 MANIFEST="${MANIFEST:-data/real_projected_shapenet55_adapointr_predictions/manifests/${SPLIT}_triplets.csv}"
 MAX_SAMPLES="${MAX_SAMPLES:-}"
 BOOTSTRAP="${BOOTSTRAP:-5000}"
+DEVICE="${DEVICE:-cuda:0}"
+BATCH_SIZE="${BATCH_SIZE:-1}"
+N_PARTIAL="${N_PARTIAL:-2048}"
+N_OUTPUT="${N_OUTPUT:-4096}"
+N_GT="${N_GT:-4096}"
 
 mkdir -p "$OUT_DIR"
 
@@ -21,11 +26,11 @@ ARGS=(
   --checkpoint "$CKPT" \
   --manifest "$MANIFEST" \
   --out-dir "$OUT_DIR" \
-  --device cuda:0 \
-  --batch-size 1 \
-  --n-partial 2048 \
-  --n-output 4096 \
-  --n-gt 4096 \
+  --device "$DEVICE" \
+  --batch-size "$BATCH_SIZE" \
+  --n-partial "$N_PARTIAL" \
+  --n-output "$N_OUTPUT" \
+  --n-gt "$N_GT" \
   --eval-seed 200570 \
   --input-seed 570 \
   --save-predictions

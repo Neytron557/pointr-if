@@ -88,6 +88,8 @@ def _forward_model(model: torch.nn.Module, batch: Dict[str, Any]) -> Dict[str, t
             candidates=batch["candidates"],
             source_ids=batch.get("source_ids"),
         )
+    if "coarse_features" in batch:
+        return model(batch["partial"], batch["coarse"], coarse_features=batch["coarse_features"])
     return model(batch["partial"], batch["coarse"])
 
 

@@ -1,219 +1,58 @@
 # Codex Status
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-06-01
 
-## Status
+## Current Status
 
-Hard second-pass real-data ShapeNet55/34 training and evaluation are complete. The repository now contains real AdaPoinTr coarse exports, naive/gated-local/GMV PoinTr-IF training logs, deterministic held-out evaluations, paired statistics, per-category metrics, selector baselines, and ranked qualitative visualizations.
+The final selected result is the A100 PCN Run B experiment: a backbone-feature-conditioned `feature_gmv` refiner trained on AdaPoinTr PCN decoder features. The checkpoint is tracked at `checkpoints/run_b/best.pt`.
 
-## Environment Summary
+Run A, the multi-view consistency AdaPoinTr fine-tuning path, was implemented and evaluated but failed because it degraded held-out PCN performance. Run A checkpoints are not tracked.
 
-- Project root: `/home/ubuntu/ai_and_ml/pointr_if_project`
-- Python: 3.12.3 in `.venv`
-- PyTorch: `2.7.1+cu126`
-- CUDA available to PyTorch: `true`
-- GPU: NVIDIA TITAN X (Pascal), 12288 MiB VRAM
-- NVIDIA driver: 580.159.03
-- Git status for this package: no `.git` repository is present in `pointr_if_project`
+## Final Run B Test Result
 
-## Data and Checkpoints
+| method | n | chamfer | fscore |
+|---|---:|---:|---:|
+| anchor | 1200 | 0.042830 | 0.596364 |
+| coarse | 1200 | 0.043141 | 0.586850 |
+| partial | 1200 | 0.151631 | 0.326790 |
+| refined | 1200 | 0.041547 | 0.613169 |
 
-- PCN: not available through the environment without manual gated access.
-- Real benchmark used: Projected ShapeNet55/34.
-- Data root: `external/PoinTr/data/ShapeNet55-34`.
-- Train/val/test sample counts: 1200 / 150 / 150.
-- Train/val/test category counts: 53 / 21 / 23.
-- AdaPoinTr checkpoint: `external/PoinTr/pretrained/AdaPoinTr_ps55.pth`.
-- AdaPoinTr config: `external/PoinTr/cfgs/Projected_ShapeNet55_models/AdaPoinTr.yaml`.
-- Final refiner checkpoint: `outputs/real_projected_shapenet55_gmv_if/best_model.pt`.
-- Replicate checkpoint: `outputs/real_projected_shapenet55_gmv_if_seed571/best_model.pt`.
-- Deterministic evaluation seed for final GMV comparisons: `200570`.
+Paired coarse-vs-refined result:
 
-## Commands Run
+- Mean CD improvement: `3.6936%`.
+- Bootstrap 95% CI: `[3.6073%, 3.7810%]`.
+- Positive / negative / zero samples: `1186 / 14 / 0`.
+- Mean F-score delta: `0.02631900`.
 
-Environment gate:
+## Tracked Artifacts
 
-```bash
-pwd
-ls -lah
-python --version
-which python
-nvidia-smi || true
-python - <<'PY'
-import torch
-print("torch:", torch.__version__)
-print("cuda_available:", torch.cuda.is_available())
-print("cuda_count:", torch.cuda.device_count())
-if torch.cuda.is_available():
-    print("gpu:", torch.cuda.get_device_name(0))
-PY
-df -h
-free -h
-```
+- Best Run B checkpoint: `checkpoints/run_b/best.pt`.
+- Run B result files: `results/a100_full_improvement/run_b_feature_refiner/`.
+- Run A failure metrics: `results/a100_full_improvement/run_a_pcn_mvc/`.
+- Reproduction report: `docs/A100_PCN_RESULTS.md`.
+- A100 launcher: `scripts/train_a100_full_improvement.sh`.
+- Best-checkpoint evaluator: `scripts/evaluate_run_b_best.sh`.
 
-AdaPoinTr coarse exports:
+## Environment Used
 
-```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python tools/export_pointr_predictions.py \
-  --pointr-root external/PoinTr \
-  --config external/PoinTr/cfgs/Projected_ShapeNet55_models/AdaPoinTr.yaml \
-  --checkpoint external/PoinTr/pretrained/AdaPoinTr_ps55.pth \
-  --data-root external/PoinTr/data/ShapeNet55-34 \
-  --split train \
-  --split-name train \
-  --selected-json data/real_projected_shapenet55_subset/train_selected_members.json \
-  --out-root data/real_projected_shapenet55_adapointr_predictions \
-  --limit 1200 \
-  --batch-size 2 \
-  --device cuda \
-  --seed 570
-```
+- Project root: `/lustre/home/ziya/PoinTr/pointr_if_project`.
+- Python: `.venv` created from `requirements.txt`.
+- PyTorch: `2.11.0+cu128`.
+- GPU: physical `gpu_id=1`, selected by `CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1`.
+- Visible CUDA device: `NVIDIA Graphics Device`, about 98 GB VRAM.
+- CPU cap: `OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 NUMEXPR_NUM_THREADS=8 NUM_THREADS=8 NUM_WORKERS=8`.
 
-Validation and test exports used the same command with `--split test`, the test selected-member JSON, and deterministic offsets:
+## Data Requirement
 
-- Validation: `--split-name val --offset 0 --limit 150`
-- Test: `--split-name test --offset 150 --limit 150`
-
-Manifest validation:
-
-```bash
-.venv/bin/python tools/validate_triplet_manifest.py \
-  data/real_projected_shapenet55_adapointr_predictions/manifests/train_triplets.csv \
-  --max-samples 999999 \
-  --json-out reports/real_projected_shapenet55_train_manifest_validation.json
-
-.venv/bin/python tools/validate_triplet_manifest.py \
-  data/real_projected_shapenet55_adapointr_predictions/manifests/val_triplets.csv \
-  --max-samples 999999 \
-  --json-out reports/real_projected_shapenet55_val_manifest_validation.json
-
-.venv/bin/python tools/validate_triplet_manifest.py \
-  data/real_projected_shapenet55_adapointr_predictions/manifests/test_triplets.csv \
-  --max-samples 999999 \
-  --json-out reports/real_projected_shapenet55_test_manifest_validation.json
-```
-
-Refiner training:
-
-```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m pointr_if.train \
-  --config configs/real_projected_shapenet55_adapointr_if_fast.yaml \
-  --train-manifest data/real_projected_shapenet55_adapointr_predictions/manifests/train_triplets.csv \
-  --val-manifest data/real_projected_shapenet55_adapointr_predictions/manifests/val_triplets.csv \
-  --out-dir outputs/real_projected_shapenet55_adapointr_if_fast \
-  --epochs 20 \
-  --batch-size 4 \
-  --num-workers 4 \
-  --seed 570 \
-  --device cuda
-```
-
-Hard second-pass GMV training:
-
-```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m pointr_if.train \
-  --config configs/real_projected_shapenet55_gmv_if.yaml \
-  --train-manifest data/real_projected_shapenet55_adapointr_predictions/manifests/train_triplets.csv \
-  --val-manifest data/real_projected_shapenet55_adapointr_predictions/manifests/val_triplets.csv \
-  --out-dir outputs/real_projected_shapenet55_gmv_if \
-  --epochs 40 \
-  --batch-size 4 \
-  --num-workers 4 \
-  --seed 570 \
-  --device cuda
-```
-
-Second seed:
-
-```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m pointr_if.train \
-  --config configs/real_projected_shapenet55_gmv_if.yaml \
-  --train-manifest data/real_projected_shapenet55_adapointr_predictions/manifests/train_triplets.csv \
-  --val-manifest data/real_projected_shapenet55_adapointr_predictions/manifests/val_triplets.csv \
-  --out-dir outputs/real_projected_shapenet55_gmv_if_seed571 \
-  --epochs 40 \
-  --batch-size 4 \
-  --num-workers 4 \
-  --seed 571 \
-  --device cuda
-```
-
-Evaluation:
-
-```bash
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m pointr_if.evaluate \
-  --manifest data/real_projected_shapenet55_adapointr_predictions/manifests/val_triplets.csv \
-  --checkpoint outputs/real_projected_shapenet55_adapointr_if_fast/best_model.pt \
-  --out-dir outputs/real_projected_shapenet55_adapointr_if_fast/val_eval \
-  --batch-size 4 \
-  --num-workers 4 \
-  --device cuda \
-  --save-predictions \
-  --save-visualizations \
-  --max-visualizations 12
-
-CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m pointr_if.evaluate \
-  --manifest data/real_projected_shapenet55_adapointr_predictions/manifests/test_triplets.csv \
-  --checkpoint outputs/real_projected_shapenet55_adapointr_if_fast/best_model.pt \
-  --out-dir outputs/real_projected_shapenet55_adapointr_if_fast/test_eval \
-  --batch-size 4 \
-  --num-workers 4 \
-  --device cuda \
-  --save-predictions \
-  --save-visualizations \
-  --max-visualizations 12
-```
-
-Summary generation:
-
-```bash
-.venv/bin/python tools/compare_real_results.py \
-  outputs/real_projected_shapenet55_adapointr_if_fast/val_eval \
-  outputs/real_projected_shapenet55_adapointr_if_fast/test_eval \
-  --out outputs/real_projected_shapenet55_adapointr_if_fast/real_results_summary_table.md
-
-.venv/bin/python tools/make_qualitative_grid.py \
-  --image-dir outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/visualizations \
-  --out outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/qualitative_grid.png \
-  --limit 6 \
-  --columns 2
-```
-
-## Real Metrics
-
-Held-out test, all on the same sample IDs:
-
-| method | n | chamfer | fscore | CD improvement vs coarse | bootstrap 95% CI | paired t p |
-|---|---:|---:|---:|---:|---:|---:|
-| partial input | 150 | 0.158159 | 0.175398 | -127.94% | n/a | n/a |
-| visible anchor FPS(partial + coarse) | 150 | 0.072260 | 0.234357 | -4.14% | n/a | n/a |
-| AdaPoinTr coarse | 150 | 0.069386 | 0.274315 | 0.00% | n/a | n/a |
-| naive PoinTr-IF seed 570 | 150 | 0.069320 | 0.274787 | 0.0957% | [-0.0457%, 0.2390%] | 0.1937 |
-| gated-local PoinTr-IF seed 570 | 150 | 0.069243 | 0.274894 | 0.2062% | [0.0841%, 0.3301%] | 0.001277 |
-| GMV-PoinTr-IF seed 571 | 150 | 0.069219 | 0.276132 | 0.2405% | [0.0832%, 0.4234%] | 0.005839 |
-| GMV-PoinTr-IF seed 570 | 150 | 0.069101 | 0.277758 | 0.4107% | [0.2389%, 0.6037%] | 1.33e-05 |
-
-## Artifact Paths
+The gated PCN dataset is not tracked in git. To reproduce, place it at:
 
 ```text
-data/real_projected_shapenet55_adapointr_predictions/manifests/
-data/real_projected_shapenet55_adapointr_predictions/logs/
-reports/real_projected_shapenet55_*_manifest_validation.json
-outputs/real_projected_shapenet55_adapointr_if_fast/
-outputs/real_projected_shapenet55_adapointr_if_fast/val_eval/
-outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/
-outputs/real_projected_shapenet55_adapointr_if_fast/test_eval/qualitative_grid.png
-outputs/real_projected_shapenet55_gated_local_if/
-outputs/real_projected_shapenet55_gmv_if/
-outputs/real_projected_shapenet55_gmv_if/test_eval/stats/paired_stats.md
-outputs/real_projected_shapenet55_gmv_if/test_eval/ranked_qualitative.png
-outputs/real_projected_shapenet55_gmv_if_seed571/
-docs/HARD_SECOND_PASS_REPORT.md
+data/ShapeNetCompletion
 ```
 
-## Remaining Caveats
+Then run:
 
-- This is a real Projected ShapeNet55/34 subset result, not an official PCN result.
-- The local projected data cap is 1200/150/150 usable train/val/test samples. The official split metadata is larger, but additional local projected partial files were not available.
-- The final GMV gain is statistically significant but still modest. It should be presented as a lightweight refinement improvement over a strong AdaPoinTr baseline, not as a replacement for the backbone.
-- The visible-anchor baseline is a negative ablation for Chamfer on this subset.
+```bash
+bash scripts/setup_a100_venv.sh
+RUN_A=0 RUN_B=1 FORCE_EXPORT=1 bash scripts/train_a100_full_improvement.sh outputs/a100_full_improvement_repro
+```

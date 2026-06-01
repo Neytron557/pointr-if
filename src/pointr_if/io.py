@@ -11,6 +11,37 @@ import numpy as np
 from .point_ops import normalize_points_np, resample_points_np
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LEGACY_PROJECT_ROOTS = (
+    Path("/home/ubuntu/ai_and_ml/pointr_if_project"),
+)
+
+
+def resolve_project_path(path: str | Path, *, base: str | Path | None = None) -> Path:
+    """Resolve project-local paths, including absolute paths from older run logs."""
+    p = Path(path)
+    if not p.is_absolute() and base is not None:
+        p = Path(base) / p
+    if p.exists():
+        return p.resolve()
+    if p.is_absolute():
+        for legacy_root in LEGACY_PROJECT_ROOTS:
+            try:
+                rel = p.relative_to(legacy_root)
+            except ValueError:
+                continue
+            remapped = PROJECT_ROOT / rel
+            if remapped.exists():
+                return remapped.resolve()
+        parts = p.parts
+        if "pointr_if_project" in parts:
+            idx = parts.index("pointr_if_project")
+            remapped = PROJECT_ROOT.joinpath(*parts[idx + 1 :])
+            if remapped.exists():
+                return remapped.resolve()
+    return p.resolve() if p.is_absolute() else p
+
+
 def _as_point_array(arr: np.ndarray, source: str, sample_index: int = 0) -> np.ndarray:
     arr = np.asarray(arr, dtype=np.float32)
     if arr.ndim == 3:
@@ -105,7 +136,7 @@ def write_ascii_pcd(path: str | Path, points: np.ndarray) -> None:
 
 
 def load_point_cloud(path: str | Path) -> np.ndarray:
-    path = Path(path)
+    path = resolve_project_path(path)
     suffix = path.suffix.lower()
     if suffix == ".npy":
         arr = np.load(path)
@@ -198,7 +229,7 @@ def load_triplet_npz(path: str | Path) -> Dict[str, np.ndarray]:
 
 
 def read_manifest(path: str | Path) -> List[Dict[str, str]]:
-    path = Path(path)
+    path = resolve_project_path(path)
     with path.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = set(reader.fieldnames or [])
@@ -220,13 +251,13 @@ def read_manifest(path: str | Path) -> List[Dict[str, str]]:
             value = row.get(canonical) or row.get(path_key)
             if not value:
                 raise ValueError(f"Manifest row {row.get('id', '<unknown>')} is missing {canonical}/{path_key}")
-            p = Path(value)
-            if not p.is_absolute():
-                value = str((base / p).resolve())
-            else:
-                value = str(p)
+            value = str(resolve_project_path(value, base=base))
             row[canonical] = value
             row[path_key] = value
+        for optional_path in ("feature_path", "coarse_feature_path", "candidate_npz", "candidates"):
+            value = row.get(optional_path)
+            if value:
+                row[optional_path] = str(resolve_project_path(value, base=base))
     return rows
 
 

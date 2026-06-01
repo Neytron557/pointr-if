@@ -19,6 +19,7 @@ def apply_cli_overrides(
     epochs: int | None = None,
     batch_size: int | None = None,
     num_workers: int | None = None,
+    time_budget_hours: float | None = None,
     amp: bool | None = None,
     seed: int | None = None,
     lr: float | None = None,
@@ -47,6 +48,8 @@ def apply_cli_overrides(
         updated["train"]["val_batch_size"] = int(batch_size)
     if num_workers is not None:
         updated["train"]["num_workers"] = int(num_workers)
+    if time_budget_hours is not None:
+        updated["train"]["time_budget_hours"] = float(time_budget_hours)
     if amp is not None:
         updated["train"]["amp"] = bool(amp)
     if lr is not None:
@@ -82,6 +85,7 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=None)
+    parser.add_argument("--time-budget-hours", type=float, default=None)
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--lr", type=float, default=None)
@@ -98,6 +102,7 @@ def main() -> None:
         epochs=args.epochs,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        time_budget_hours=args.time_budget_hours,
         amp=args.amp,
         seed=args.seed,
         lr=args.lr,

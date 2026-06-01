@@ -1,0 +1,3 @@
+[submodule "external/PoinTr"]
+	path = external/PoinTr
+	url = https://github.com/yuxumin/PoinTr.git

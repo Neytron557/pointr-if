@@ -1,0 +1,57 @@
+seed: 570
+model:
+  type: feature_gmv
+  hidden_dim: 160
+  point_feature_dim: 96
+  global_dim: 192
+  fourier_bands: 4
+  k: 12
+  use_local: true
+  use_multiview: true
+  multiview_resolution: 128
+  multiview_feature_dim: 48
+  multiview_backbone: resnet18
+  coarse_feature_dim: 384
+  coarse_feature_embed_dim: 64
+  delta_scale: 0.035
+  gate_bias: -2.0
+dataset:
+  type: manifest
+  manifest: outputs/a100_full_improvement/run_b_features/manifests/train_triplets.csv
+  val_manifest: outputs/a100_full_improvement/run_b_features/manifests/val_triplets.csv
+  n_partial: 2048
+  n_coarse: 4096
+  n_gt: 4096
+  normalize: true
+  resample_mode: random
+train:
+  epochs: 60
+  batch_size: 16
+  val_batch_size: 16
+  num_threads: 8
+  num_workers: 8
+  lr: 0.0002
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  val_every: 1
+  max_val_batches: null
+  log_every: 20
+  device: cuda
+  amp: true
+queries:
+  n_query: 0
+loss:
+  lambda_cd: 1.0
+  lambda_occ: 0.0
+  lambda_delta: 0.20
+  lambda_delta_l2: 0.08
+  lambda_partial: 0.02
+  lambda_gate_bce: 0.04
+  lambda_gate_sparsity: 0.002
+  gate_margin: 0.00005
+  lambda_repulsion: 0.001
+  repulsion_k: 5
+  repulsion_radius: 0.018
+  squared_cd: false
+eval:
+  fscore_threshold: 0.02

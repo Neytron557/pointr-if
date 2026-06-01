@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import math
+import time
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -94,7 +95,10 @@ def compute_losses(model, batch: Dict, cfg: Dict) -> Tuple[torch.Tensor, Dict[st
             near_std=float(qcfg.get("near_std", 0.035)),
             box_scale=float(qcfg.get("box_scale", 1.25)),
         )
-    out = model(partial=partial, coarse=coarse, query=query)
+    forward_kwargs = {"partial": partial, "coarse": coarse, "query": query}
+    if "coarse_features" in batch:
+        forward_kwargs["coarse_features"] = batch["coarse_features"]
+    out = model(**forward_kwargs)
     refined = out["refined"]
 
     loss_cd = chamfer_distance(refined, gt, squared=bool(loss_cfg.get("squared_cd", False)))
@@ -261,7 +265,10 @@ def evaluate(model, loader: DataLoader, cfg: Dict, device: torch.device, max_bat
         if "candidates" in batch:
             out = model(batch["partial"], batch["coarse"], candidates=batch["candidates"], source_ids=batch.get("source_ids"))
         else:
-            out = model(batch["partial"], batch["coarse"])
+            if "coarse_features" in batch:
+                out = model(batch["partial"], batch["coarse"], coarse_features=batch["coarse_features"])
+            else:
+                out = model(batch["partial"], batch["coarse"])
         refined = out["refined"]
         coarse = batch["coarse"]
         gt = batch["gt"]
@@ -359,11 +366,19 @@ def train(cfg: Dict, output_dir: str | Path) -> Dict[str, float]:
     max_val_batches = None if max_val_batches in (None, "null") else int(max_val_batches)
     max_train_batches = train_cfg.get("max_train_batches", None)
     max_train_batches = None if max_train_batches in (None, "null") else int(max_train_batches)
+    time_budget_hours = train_cfg.get("time_budget_hours", None)
+    time_budget_seconds = None
+    if time_budget_hours not in (None, "null", ""):
+        time_budget_seconds = max(0.0, float(time_budget_hours)) * 3600.0
+    train_started_at = time.monotonic()
+    stopped_by_time_budget = False
 
     last_val = {}
     for epoch in range(start_epoch, epochs):
         model.train()
         agg = []
+        optimizer_stepped = False
+        time_budget_reached = False
         pbar = tqdm(train_loader, desc=f"epoch {epoch+1}/{epochs}", leave=False)
         for step, batch in enumerate(pbar):
             if max_train_batches is not None and step >= max_train_batches:
@@ -376,12 +391,18 @@ def train(cfg: Dict, output_dir: str | Path) -> Dict[str, float]:
             if grad_clip > 0:
                 scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            scale_before_step = scaler.get_scale()
             scaler.step(opt)
             scaler.update()
+            optimizer_stepped = optimizer_stepped or (not amp_enabled or scaler.get_scale() >= scale_before_step)
             agg.append(logs)
             if (step + 1) % log_every == 0 or step == 0:
                 pbar.set_postfix({"loss": f"{logs['loss']:.4f}", "cd": f"{logs['loss_cd']:.4f}", "occ": f"{logs['loss_occ']:.4f}"})
-        scheduler.step()
+            if time_budget_seconds is not None and time.monotonic() - train_started_at >= time_budget_seconds:
+                time_budget_reached = True
+                break
+        if optimizer_stepped:
+            scheduler.step()
         train_logs = {k: _avg([r[k] for r in agg]) for k in agg[0].keys()}
         train_logs.update({"epoch": epoch + 1, "split": "train", "lr": scheduler.get_last_lr()[0]})
 
@@ -400,8 +421,17 @@ def train(cfg: Dict, output_dir: str | Path) -> Dict[str, float]:
                 best_cd = last_val["refined_cd"]
                 torch.save({"model": model.state_dict(), "cfg": cfg, "epoch": epoch + 1, "metrics": last_val}, output_dir / "best_model.pt")
         torch.save({"model": model.state_dict(), "cfg": cfg, "epoch": epoch + 1, "metrics": last_val}, output_dir / "last_model.pt")
+        if time_budget_reached or (time_budget_seconds is not None and time.monotonic() - train_started_at >= time_budget_seconds):
+            stopped_by_time_budget = True
+            print(f"Stopping after epoch {epoch+1}: reached time budget of {float(time_budget_hours):.2f} hours")
+            break
 
-    summary = {"best_refined_cd": best_cd, "last_val": last_val, "output_dir": str(output_dir)}
+    summary = {
+        "best_refined_cd": best_cd,
+        "last_val": last_val,
+        "output_dir": str(output_dir),
+        "stopped_by_time_budget": stopped_by_time_budget,
+    }
     with (output_dir / "summary.json").open("w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     return summary

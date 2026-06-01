@@ -236,6 +236,9 @@ class GatedMultiViewSelfStructureRefiner(nn.Module):
         use_multiview: bool = True,
         multiview_resolution: int = 32,
         multiview_feature_dim: int = 32,
+        multiview_backbone: str = "tiny",
+        coarse_feature_dim: int = 0,
+        coarse_feature_embed_dim: int = 0,
     ):
         super().__init__()
         self.k = int(k)
@@ -244,6 +247,9 @@ class GatedMultiViewSelfStructureRefiner(nn.Module):
         self.use_multiview = bool(use_multiview)
         self.multiview_resolution = int(multiview_resolution)
         self.multiview_feature_dim = int(multiview_feature_dim) if self.use_multiview else 0
+        self.multiview_backbone = str(multiview_backbone).lower()
+        self.coarse_feature_dim = int(coarse_feature_dim)
+        self.coarse_feature_embed_dim = int(coarse_feature_embed_dim) if self.coarse_feature_dim > 0 else 0
         self.encoder = PointSetEncoder(hidden_dim=hidden_dim, point_feature_dim=point_feature_dim, global_dim=global_dim)
         self.fourier = FourierFeatures(num_bands=fourier_bands, include_xyz=True)
 
@@ -254,17 +260,40 @@ class GatedMultiViewSelfStructureRefiner(nn.Module):
             local_dim = 0
 
         if self.use_multiview:
-            self.view_cnn = nn.Sequential(
-                nn.Conv2d(4, hidden_dim // 2, kernel_size=3, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(hidden_dim // 2, self.multiview_feature_dim, kernel_size=3, padding=1),
-                nn.ReLU(),
-            )
+            if self.multiview_backbone == "resnet18":
+                try:
+                    from torchvision.models import resnet18
+                except Exception as exc:  # pragma: no cover - depends on optional env package.
+                    raise RuntimeError("multiview_backbone=resnet18 requires torchvision to be installed") from exc
+                backbone = resnet18(weights=None)
+                backbone.conv1 = nn.Conv2d(4, 64, kernel_size=7, stride=2, padding=3, bias=False)
+                self.view_cnn = nn.Sequential(
+                    backbone.conv1,
+                    backbone.bn1,
+                    backbone.relu,
+                    backbone.maxpool,
+                    backbone.layer1,
+                    backbone.layer2,
+                    nn.Conv2d(128, self.multiview_feature_dim, kernel_size=1),
+                    nn.ReLU(),
+                )
+            else:
+                self.view_cnn = nn.Sequential(
+                    nn.Conv2d(4, hidden_dim // 2, kernel_size=3, padding=1),
+                    nn.ReLU(),
+                    nn.Conv2d(hidden_dim // 2, self.multiview_feature_dim, kernel_size=3, padding=1),
+                    nn.ReLU(),
+                )
         else:
             self.view_cnn = None
 
+        if self.coarse_feature_embed_dim > 0:
+            self.coarse_feature_proj = mlp([self.coarse_feature_dim, self.coarse_feature_embed_dim, self.coarse_feature_embed_dim])
+        else:
+            self.coarse_feature_proj = None
+
         geom_dim = 3
-        trunk_dim = self.fourier.out_dim + global_dim + local_dim + self.multiview_feature_dim + geom_dim
+        trunk_dim = self.fourier.out_dim + global_dim + local_dim + self.multiview_feature_dim + geom_dim + self.coarse_feature_embed_dim
         self.query_trunk = mlp([trunk_dim, hidden_dim, hidden_dim, hidden_dim])
         self.occ_head = nn.Linear(hidden_dim, 1)
         self.delta_head = nn.Linear(hidden_dim, 3)
@@ -304,7 +333,7 @@ class GatedMultiViewSelfStructureRefiner(nn.Module):
         b = maps.shape[0]
         maps = maps.reshape(b * 6, 4, self.multiview_resolution, self.multiview_resolution)
         feats = self.view_cnn(maps)
-        return feats.reshape(b, 6, self.multiview_feature_dim, self.multiview_resolution, self.multiview_resolution)
+        return feats.reshape(b, 6, self.multiview_feature_dim, feats.shape[-2], feats.shape[-1])
 
     def _sample_view_features(self, query: torch.Tensor, view_feats: Optional[torch.Tensor]) -> torch.Tensor:
         if view_feats is None:
@@ -326,6 +355,7 @@ class GatedMultiViewSelfStructureRefiner(nn.Module):
         partial: torch.Tensor,
         coarse: torch.Tensor,
         view_feats: Optional[torch.Tensor],
+        query_backbone_features: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         b, nq, _ = query.shape
         parts = [
@@ -337,6 +367,11 @@ class GatedMultiViewSelfStructureRefiner(nn.Module):
             parts.append(self._local_features(query, encoded))
         if self.use_multiview:
             parts.append(self._sample_view_features(query, view_feats))
+        if self.coarse_feature_proj is not None:
+            if query_backbone_features is None:
+                parts.append(query.new_zeros(b, nq, self.coarse_feature_embed_dim))
+            else:
+                parts.append(self.coarse_feature_proj(query_backbone_features.to(dtype=query.dtype)))
         return self.query_trunk(torch.cat(parts, dim=-1))
 
     def forward(
@@ -344,10 +379,11 @@ class GatedMultiViewSelfStructureRefiner(nn.Module):
         partial: torch.Tensor,
         coarse: torch.Tensor,
         query: Optional[torch.Tensor] = None,
+        coarse_features: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         encoded = self.encoder(partial, coarse)
         view_feats = self._encode_views(partial, coarse)
-        h = self._trunk_features(coarse, encoded, partial, coarse, view_feats)
+        h = self._trunk_features(coarse, encoded, partial, coarse, view_feats, coarse_features)
         raw_delta = torch.tanh(self.delta_head(h)) * self.delta_scale
         gate_logits = self.gate_head(h).squeeze(-1)
         gate = torch.sigmoid(gate_logits)
@@ -509,6 +545,24 @@ def build_model_from_config(cfg: Dict) -> nn.Module:
             use_multiview=bool(model_cfg.get("use_multiview", True)),
             multiview_resolution=int(model_cfg.get("multiview_resolution", 32)),
             multiview_feature_dim=int(model_cfg.get("multiview_feature_dim", 32)),
+            multiview_backbone=str(model_cfg.get("multiview_backbone", "tiny")),
+        )
+    if model_type in {"feature_gmv", "feature_conditioned_gmv", "backbone_feature_refiner"}:
+        return GatedMultiViewSelfStructureRefiner(
+            hidden_dim=int(model_cfg.get("hidden_dim", 160)),
+            point_feature_dim=int(model_cfg.get("point_feature_dim", 96)),
+            global_dim=int(model_cfg.get("global_dim", 192)),
+            fourier_bands=int(model_cfg.get("fourier_bands", 4)),
+            k=int(model_cfg.get("k", 12)),
+            use_local=bool(model_cfg.get("use_local", True)),
+            delta_scale=float(model_cfg.get("delta_scale", 0.04)),
+            gate_bias=float(model_cfg.get("gate_bias", -2.0)),
+            use_multiview=bool(model_cfg.get("use_multiview", True)),
+            multiview_resolution=int(model_cfg.get("multiview_resolution", 128)),
+            multiview_feature_dim=int(model_cfg.get("multiview_feature_dim", 48)),
+            multiview_backbone=str(model_cfg.get("multiview_backbone", "resnet18")),
+            coarse_feature_dim=int(model_cfg.get("coarse_feature_dim", 384)),
+            coarse_feature_embed_dim=int(model_cfg.get("coarse_feature_embed_dim", 64)),
         )
     if model_type in {"seed", "seed_if", "seed_pointr_if"}:
         return SeedPointrIFRefiner(
