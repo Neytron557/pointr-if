@@ -30,3 +30,6 @@ build/
 .DS_Store
 Thumbs.db
 external/PoinTr/
+
+# Generated submission bundles
+/deliverables/*.zip

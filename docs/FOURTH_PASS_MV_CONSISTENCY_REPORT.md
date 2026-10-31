@@ -242,3 +242,5 @@ Fourth-pass source, scripts, reports, and audit metrics are packaged at:
 ```text
 deliverables/pointr_if_fourth_pass_mvc_tools.zip
 ```
+
+The ZIP path above records a locally generated bundle. Generated deliverable ZIPs are no longer tracked in Git.

@@ -127,3 +127,5 @@ deliverables/pointr_if_hard_second_pass.zip
 deliverables/archive_listing.txt
 ```
 
+
+The ZIP path above records a locally generated bundle. Generated deliverable ZIPs are no longer tracked in Git.

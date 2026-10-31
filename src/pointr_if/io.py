@@ -12,8 +12,10 @@ from .point_ops import normalize_points_np, resample_points_np
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-LEGACY_PROJECT_ROOTS = (
-    Path("/home/ubuntu/ai_and_ml/pointr_if_project"),
+LEGACY_PROJECT_ROOTS = tuple(
+    Path(root)
+    for root in os.environ.get("POINTR_IF_LEGACY_ROOTS", "").split(os.pathsep)
+    if root
 )
 
 

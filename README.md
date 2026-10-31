@@ -97,7 +97,6 @@ PYTHONPATH=src python -m compileall -q src tools tests
 ## Documentation Map
 
 - `docs/A100_PCN_RESULTS.md`: final PCN/A100 report and reproduction runbook.
-- `docs/MAIN_MODEL_IMPROVEMENT_PLAN.md` and `docs/MODEL_IMPROVEMENT_PLAN.md`: implementation plan that led to Run A and Run B.
 - `docs/FOURTH_PASS_MV_CONSISTENCY_REPORT.md`: prior MVC work and Run A lineage.
 - `docs/HARD_SECOND_PASS_REPORT.md`: older Projected ShapeNet55/34 result.
 - `docs/EXPERIMENT_LOG.md`: historical experiment notes.

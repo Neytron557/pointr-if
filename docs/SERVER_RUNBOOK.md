@@ -4,8 +4,9 @@ This runbook reproduces or extends the real Projected ShapeNet55/34 experiment. 
 
 ## 1. Verify GPU and Environment
 
+Run these commands from the repository root:
+
 ```bash
-cd /home/ubuntu/ai_and_ml/pointr_if_project
 source .venv/bin/activate
 nvidia-smi
 python - <<'PY'
@@ -230,3 +231,7 @@ Current held-out test headline:
 | visible anchor FPS(partial + coarse) | 150 | 0.072260 | 0.234357 | -4.14% |
 | AdaPoinTr coarse | 150 | 0.069386 | 0.274315 | 0.00% |
 | PoinTr-IF refined | 150 | 0.069320 | 0.274787 | 0.10% |
+
+## Local paths and old manifests
+
+Run commands from the repository root. If an old manifest uses a different absolute project root, set `POINTR_IF_LEGACY_ROOTS` to that root before starting Python. Multiple roots can be separated with the platform path separator. Paths containing the old `pointr_if_project` directory name are also remapped when a matching local file exists.

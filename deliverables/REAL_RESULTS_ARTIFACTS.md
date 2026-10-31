@@ -1,6 +1,6 @@
 # Real Results Artifact Manifest
 
-Archive target:
+Historical archive target, generated locally and no longer tracked in Git:
 
 ```text
 deliverables/pointr_if_real_projected_shapenet55_results.zip
@@ -23,4 +23,4 @@ Excluded:
 - Official pretrained AdaPoinTr checkpoint files under `external/PoinTr/pretrained`.
 - Large downloaded raw archives under `data/downloads`.
 
-The excluded data/checkpoints remain present locally at the paths recorded in `README.md`, `docs/EXPERIMENT_LOG.md`, and command logs.
+Raw data and upstream checkpoints must be obtained separately. See `README.md` and `docs/EXPERIMENT_LOG.md` for setup and experiment details. Generated ZIP bundles are excluded from Git.

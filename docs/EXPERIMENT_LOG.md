@@ -109,7 +109,7 @@ This is the current final experiment run for the project. It uses real Projected
 
 ### Environment
 
-- Project root: `/home/ubuntu/ai_and_ml/pointr_if_project`
+- Project root: `.`
 - Python: 3.12.3
 - PyTorch: `2.7.1+cu126`
 - CUDA available to PyTorch: `true`
